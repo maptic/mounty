@@ -1,176 +1,153 @@
-//
-//  ContentView.swift
-//  Mounty
-//
-//  Created by Merlin Unterfinger on 11.12.2025.
-//
-
-
 import SwiftUI
+
+enum AppViewMode { case list, add }
 
 struct ContentView: View {
     @StateObject var manager: FilerManager
-    @State private var showingAddSheet = false
+    @State private var viewMode: AppViewMode = .list
+    
+    let width: CGFloat = 340
+    let height: CGFloat = 350
+    
+    var body: some View {
+        ZStack {
+            Color(NSColor.windowBackgroundColor)
+            if viewMode == .list {
+                MainListView(manager: manager, viewMode: $viewMode)
+            } else {
+                AddFilerView(manager: manager, viewMode: $viewMode)
+            }
+        }
+        .frame(width: width, height: height)
+    }
+}
+
+struct MainListView: View {
+    @ObservedObject var manager: FilerManager
+    @Binding var viewMode: AppViewMode
     
     var body: some View {
         VStack(spacing: 0) {
-            // -- HEADER --
+            // Header
             HStack {
-                Text("Mounty")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
+                Text("Mounty").font(.headline)
                 Spacer()
-                
                 Toggle("Start at Login", isOn: $manager.launchAtLogin)
-                    .controlSize(.mini)
-                    .toggleStyle(.switch)
-                    .font(.caption)
+                    .controlSize(.mini).toggleStyle(.switch).font(.caption)
             }
             .padding(12)
-            .background(Color(NSColor.controlBackgroundColor))
-            
             Divider()
             
-            // -- LIST --
+            // List
             if manager.filers.isEmpty {
-                EmptyStateView()
+                VStack(spacing: 15) {
+                    Spacer()
+                    Image(systemName: "server.rack").font(.system(size: 40)).foregroundColor(.secondary)
+                    Text("No Filers Configured").font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                }
             } else {
                 ScrollView {
-                    VStack(spacing: 1) {
+                    VStack(spacing: 0) {
                         ForEach(manager.filers) { filer in
                             FilerRow(filer: filer, manager: manager)
+                            Divider()
                         }
                     }
-                    .padding(.vertical, 4)
                 }
-                .frame(maxHeight: 300)
             }
-            
+            Spacer()
             Divider()
             
-            // -- FOOTER --
+            // Footer
             HStack {
-                Button("Quit") {
-                    NSApplication.shared.terminate(nil)
-                }
-                .keyboardShortcut("q")
-                
+                Button("Quit") { NSApplication.shared.terminate(nil) }
+                    .buttonStyle(.borderless).foregroundColor(.secondary).font(.caption)
                 Spacer()
-                
-                Button(action: { showingAddSheet = true }) {
-                    Label("Add Filer", systemImage: "plus")
-                }
+                Button(action: { viewMode = .add }) { Label("Add Filer", systemImage: "plus") }
+                    .buttonStyle(.bordered).controlSize(.small)
             }
-            .buttonStyle(.borderless) // Standard text buttons for footer
             .padding(10)
-            .background(Color(NSColor.controlBackgroundColor))
-        }
-        .frame(width: 340)
-        .sheet(isPresented: $showingAddSheet) {
-            AddFilerView(manager: manager, isPresented: $showingAddSheet)
         }
     }
 }
 
-// -- SUBVIEW: Row --
 struct FilerRow: View {
     let filer: Filer
     @ObservedObject var manager: FilerManager
     
-    var isMounted: Bool {
-        manager.mountedStatus[filer.id] ?? false
-    }
+    var isMounted: Bool { return manager.mountPaths[filer.id] != nil }
+    var isBusy: Bool { return manager.pendingOperations.contains(filer.id) }
+    var currentPath: String { return manager.mountPaths[filer.id] ?? "Disconnected" }
     
     var body: some View {
         HStack(spacing: 10) {
-            // Status Dot
+            // Dot
             Circle()
-                .fill(isMounted ? Color.green : Color.red)
+                .fill(isMounted ? Color.green : (isBusy ? Color.orange : Color.red))
                 .frame(width: 8, height: 8)
-                .help(isMounted ? "Mounted" : "Disconnected")
+                .help(isMounted ? "Mounted at \(currentPath)" : (isBusy ? "Connecting..." : "Not Mounted"))
             
-            // Info
+            // Text
             VStack(alignment: .leading, spacing: 2) {
-                Text(filer.name)
-                    .font(.system(size: 13, weight: .medium))
-                
-                HStack(spacing: 4) {
-                    Image(systemName: "network")
-                    Text(filer.mountPoint)
-                }
-                .font(.caption2)
-                .foregroundColor(.secondary)
+                Text(filer.name).font(.system(size: 13, weight: .medium))
+                Text(isMounted ? currentPath : filer.serverAddress)
+                    .font(.caption2).foregroundColor(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
             }
-            
             Spacer()
             
             // Actions
-            HStack(spacing: 0) {
-                // Copy Path Button
-                Button {
-                    manager.copyPath(filer)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .padding(6)
-                .help("Copy Path")
-                .disabled(!isMounted)
-                .opacity(isMounted ? 1 : 0.3)
+            HStack(spacing: 6) {
                 
-                // Automount Toggle (Icon based)
-                Button {
-                    manager.toggleAutomount(for: filer.id)
-                } label: {
-                    Image(systemName: filer.isAutomountEnabled ? "bolt.fill" : "bolt.slash")
-                        .foregroundColor(filer.isAutomountEnabled ? .yellow : .secondary)
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .padding(6)
-                .help("Toggle Automount")
-                
-                // Mount/Unmount Button
                 if isMounted {
-                    Button("Eject") {
-                        manager.unmount(filer)
+                    // Terminal
+                    Button { manager.openTerminal(for: filer) } label: {
+                        Image(systemName: "terminal.fill").font(.system(size: 11))
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(.red)
+                    .buttonStyle(.borderless).help("Open Terminal here")
+                    
+                    // Copy
+                    Button { manager.copyPath(filer) } label: {
+                        Image(systemName: "doc.on.doc").font(.system(size: 11))
+                    }
+                    .buttonStyle(.borderless).help("Copy Path")
+                }
+                
+                // Automount Toggle
+                Button { manager.toggleAutomount(for: filer.id) } label: {
+                    Image(systemName: filer.isAutomountEnabled ? "bolt.fill" : "bolt.slash")
+                        .foregroundColor(filer.isAutomountEnabled ? .orange : .secondary)
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.borderless).help("Toggle Automount")
+                
+                // Connect / Disconnect
+                if isMounted {
+                    Button { manager.unmount(filer) } label: {
+                        if isBusy {
+                            ProgressView().controlSize(.mini).scaleEffect(0.6)
+                        } else {
+                            Image(systemName: "network.slash").font(.system(size: 11, weight: .bold)).foregroundColor(.white).padding(4)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent).tint(.red).controlSize(.mini).help("Disconnect").disabled(isBusy)
                 } else {
-                    Button("Mount") {
-                        manager.mount(filer)
+                    Button { manager.mount(filer) } label: {
+                        if isBusy {
+                            ProgressView().controlSize(.mini).scaleEffect(0.6)
+                        } else {
+                            Image(systemName: "network").font(.system(size: 11, weight: .bold)).padding(4)
+                        }
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(.bordered).controlSize(.mini).help("Connect").disabled(isBusy)
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Color.clear)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .contentShape(Rectangle())
         .contextMenu {
-            Button("Remove Filer") {
-                manager.removeFiler(id: filer.id)
-            }
+            Button("Remove Filer") { manager.removeFiler(id: filer.id) }
         }
-    }
-}
-
-// -- SUBVIEW: Empty State --
-struct EmptyStateView: View {
-    var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "server.rack")
-                .font(.largeTitle)
-                .foregroundColor(.secondary)
-            Text("No Filers Configured")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .frame(height: 100)
     }
 }

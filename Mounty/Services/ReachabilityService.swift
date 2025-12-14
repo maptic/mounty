@@ -1,29 +1,31 @@
 import Foundation
 import Network
 
+/// Reachability Service (The Sensor)
 struct ReachabilityService {
     
-    /// Checks if a filesystem path is responsive.
-    /// Crucial for detecting "Zombie" mounts when VPN drops.
+    /// Filesystem I/O Check.
+    /// Checks if the kernel allows reading the directory.
     nonisolated static func isMountPointAlive(path: String) -> Bool {
         let group = DispatchGroup()
         group.enter()
         var isAlive = false
         
         DispatchQueue.global(qos: .userInteractive).async {
-            // access() blocks if the mount is unresponsive.
-            if access(path, F_OK) == 0 {
+            // Force I/O
+            if let _ = try? FileManager.default.contentsOfDirectory(atPath: path) {
                 isAlive = true
             }
             group.leave()
         }
         
-        // Strict 500ms timeout. If SMB doesn't answer instantly, treat as dead/laggy.
-        let result = group.wait(timeout: .now() + 0.5)
+        // Strict 1.0s timeout for hung filesystems
+        let result = group.wait(timeout: .now() + 1.0)
         return result == .success && isAlive
     }
     
-    /// Checks TCP connectivity to Port 445 (SMB) before attempting mount.
+    /// Network TCP Check (Port 445).
+    /// Detects missing routes (VPN drops) almost instantly.
     static func isServerReachable(address: String) async -> Bool {
         guard let host = URL(string: address)?.host else { return false }
         
@@ -32,7 +34,7 @@ struct ReachabilityService {
             let portEP = NWEndpoint.Port(integerLiteral: 445)
             let conn = NWConnection(to: .hostPort(host: hostEP, port: portEP), using: .tcp)
             
-            // Timeout safety for the handshake
+            // 2s Handshake timeout
             let workItem = DispatchWorkItem {
                 if conn.state != .ready {
                     conn.cancel()
@@ -44,8 +46,7 @@ struct ReachabilityService {
             conn.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    workItem.cancel()
-                    conn.cancel()
+                    workItem.cancel(); conn.cancel()
                     continuation.resume(returning: true)
                 case .failed(_), .cancelled:
                     workItem.cancel()

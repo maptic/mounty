@@ -3,26 +3,24 @@ import Combine
 import os
 import Network
 
+/// **Filer Manager (ViewModel)**
 @MainActor
 class FilerManager: ObservableObject {
+    
     // MARK: - UI State
     @Published var filers: [Filer] = []
     @Published var mountPaths: [UUID: String] = [:]
     @Published var busyFilers: Set<UUID> = []
     @Published var launchAtLogin: Bool = MountService.isLoginItemEnabled()
     @Published var preferredTerminal: String
-    
-    // Available Terminals
     @Published var availableTerminals: [(name: String, id: String)] = []
     
-    // Error Handling
     @Published var lastError: String? = nil
     @Published var showError: Bool = false
     
-    // MARK: - Internal Flags
     private var isNetworkUp: Bool = true
     
-    // MARK: - Dependencies
+    // Dependencies
     private let storage = PersistenceService()
     private let eventMonitor = EventMonitorService()
     private var cancellables = Set<AnyCancellable>()
@@ -44,71 +42,58 @@ class FilerManager: ObservableObject {
         setupPipelines()
         refreshInstalledTerminals()
         
-        // Initial Refresh
         Task { await refreshState() }
     }
     
-    // MARK: - Setup
-    
-    private func refreshInstalledTerminals() {
-        self.availableTerminals = knownTerminals.filter { (_, bundleID) in
-            NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
-        }
-        if !availableTerminals.contains(where: { $0.id == preferredTerminal }) {
-            preferredTerminal = "com.apple.Terminal"
-        }
-    }
+    // MARK: - Event Pipelines
     
     private func setupPipelines() {
-        // 1. Network Status Change (Global Gate)
+        // 1. Global Network Gate
         eventMonitor.networkStatus
             .receive(on: RunLoop.main)
             .sink { [weak self] status in
                 guard let self = self else { return }
-                
                 let wasUp = self.isNetworkUp
                 self.isNetworkUp = (status == .satisfied)
                 
-                // If network just dropped, refresh immediately to turn UI Red.
-                // If network just came up, trigger automount.
                 if self.isNetworkUp != wasUp {
                     Task { await self.refreshState() }
-                    if self.isNetworkUp {
-                        Task { await self.runAutomount() }
-                    }
+                    if self.isNetworkUp { Task { await self.runAutomount() } }
                 }
             }
             .store(in: &cancellables)
         
-        // 2. FileSystem Change
-        eventMonitor.fileSystemChanged
+        // 2. Interface Changes (VPN Toggle)
+        eventMonitor.interfacesChanged
             .receive(on: RunLoop.main)
             .sink { [weak self] in
-                Task { await self?.refreshState() }
+                Task { await self?.refreshState() } // Check for dead VPN mounts
+                Task { await self?.runAutomount() } // Retry connections
             }
             .store(in: &cancellables)
         
-        // 3. Heartbeat (Cleanup)
-        Timer.publish(every: 60, on: .main, in: .common)
+        // 3. FileSystem Changes
+        eventMonitor.fileSystemChanged
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in Task { await self?.refreshState() } }
+            .store(in: &cancellables)
+        
+        // 4. Heartbeat (5s)
+        Timer.publish(every: 5, on: .main, in: .common)
             .autoconnect()
-            .sink { [weak self] _ in
-                Task { await self?.refreshState() }
-            }
+            .sink { [weak self] _ in Task { await self?.refreshState() } }
             .store(in: &cancellables)
     }
 
     // MARK: - Logic: Automount
     
     private func runAutomount() async {
-        // Fast fail if global network is down
         guard isNetworkUp else { return }
         
         for filer in filers where filer.isAutomountEnabled {
             if mountPaths[filer.id] == nil && !busyFilers.contains(filer.id) {
-                
                 busyFilers.insert(filer.id)
                 
-                // Network Reachability Check (Specific Server)
                 let isReachable = await ReachabilityService.isServerReachable(address: filer.serverAddress)
                 
                 if isReachable && mountPaths[filer.id] == nil {
@@ -117,11 +102,8 @@ class FilerManager: ObservableObject {
                     
                     if let path = await MountService.mount(url: url) {
                          self.mountPaths[filer.id] = path
-                    } else {
-                        logger.warning("Automount failed for \(filer.name)")
                     }
                 }
-                
                 busyFilers.remove(filer.id)
             }
         }
@@ -133,7 +115,6 @@ class FilerManager: ObservableObject {
         let currentFilers = self.filers
         let networkAvailable = self.isNetworkUp
         
-        // Offload to background
         let newPaths = await Task.detached {
             return await FilerManager.detectMounts(filers: currentFilers, isNetworkUp: networkAvailable)
         }.value
@@ -145,14 +126,10 @@ class FilerManager: ObservableObject {
         }
     }
     
-    /// Pure logic static function.
-    /// Added `isNetworkUp` parameter for "Global Kill Switch" logic.
+    /// **The Robust Detector**
+    /// Checks BOTH Network Reachability (TCP) and Filesystem Liveness (I/O).
     nonisolated private static func detectMounts(filers: [Filer], isNetworkUp: Bool) async -> [UUID: String] {
-        // GLOBAL GATE: If network is down, assume all network mounts are effectively dead/unreachable.
-        // This is much faster than waiting for timeouts on every drive.
-        if !isNetworkUp {
-            return [:]
-        }
+        if !isNetworkUp { return [:] }
         
         let systemMounts = SystemMountService.getSystemMounts()
         var results: [UUID: String] = [:]
@@ -161,9 +138,16 @@ class FilerManager: ObservableObject {
             for filer in filers {
                 group.addTask {
                     if let path = SystemMountService.findMountPath(for: filer, in: systemMounts) {
-                        // Individual Liveness Check (Zombies)
-                        if ReachabilityService.isMountPointAlive(path: path) {
-                            return (filer.id, path)
+                        
+                        // 1. NETWORK CHECK (TCP)
+                        // If VPN drops, routes disappear immediately. This fails FAST.
+                        if await ReachabilityService.isServerReachable(address: filer.serverAddress) {
+                            
+                            // 2. FILESYSTEM CHECK (I/O)
+                            // If TCP says yes, but Kernel is hung, this catches it.
+                            if ReachabilityService.isMountPointAlive(path: path) {
+                                return (filer.id, path)
+                            }
                         }
                     }
                     return (filer.id, nil)
@@ -176,7 +160,16 @@ class FilerManager: ObservableObject {
         return results
     }
     
-    // MARK: - User Actions
+    // MARK: - Helper & Actions
+    
+    private func refreshInstalledTerminals() {
+        self.availableTerminals = knownTerminals.filter { (_, bundleID) in
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
+        }
+        if !availableTerminals.contains(where: { $0.id == preferredTerminal }) {
+            preferredTerminal = "com.apple.Terminal"
+        }
+    }
     
     func mount(_ filer: Filer) {
         guard let url = URL(string: filer.serverAddress) else { return }
@@ -185,7 +178,6 @@ class FilerManager: ObservableObject {
         Task {
             if let path = await MountService.mount(url: url) {
                 self.mountPaths[filer.id] = path
-                logger.info("Mounted \(filer.name)")
             } else {
                 self.lastError = "Could not connect to \(filer.name). Check address and keychain."
                 self.showError = true
@@ -219,40 +211,33 @@ class FilerManager: ObservableObject {
         }
     }
     
-    // MARK: - CRUD & Preferences
+    // MARK: - Persistence
     
     func addFiler(_ filer: Filer) {
-        filers.append(filer)
-        storage.saveFilers(filers)
+        filers.append(filer); storage.saveFilers(filers)
         Task { await refreshState() }
     }
     
     func removeFiler(_ id: UUID) {
-        filers.removeAll { $0.id == id }
-        storage.saveFilers(filers)
+        filers.removeAll { $0.id == id }; storage.saveFilers(filers)
         Task { await refreshState() }
     }
     
     func removeAllFilers() {
-        filers.removeAll()
-        storage.saveFilers(filers)
+        filers.removeAll(); storage.saveFilers(filers)
         Task { await refreshState() }
     }
     
     func toggleAutomount(_ id: UUID) {
         if let idx = filers.firstIndex(where: { $0.id == id }) {
-            filers[idx].isAutomountEnabled.toggle()
-            storage.saveFilers(filers)
-            if filers[idx].isAutomountEnabled {
-                Task { await runAutomount() }
-            }
+            filers[idx].isAutomountEnabled.toggle(); storage.saveFilers(filers)
+            if filers[idx].isAutomountEnabled { Task { await runAutomount() } }
         }
     }
     
     private func disableAutomount(for filer: Filer) {
         if let idx = filers.firstIndex(where: { $0.id == filer.id }) {
-            filers[idx].isAutomountEnabled = false
-            storage.saveFilers(filers)
+            filers[idx].isAutomountEnabled = false; storage.saveFilers(filers)
         }
     }
     
@@ -262,7 +247,6 @@ class FilerManager: ObservableObject {
     }
     
     func setPreferredTerminal(_ bundleID: String) {
-        preferredTerminal = bundleID
-        storage.saveTerminalBundleID(bundleID)
+        preferredTerminal = bundleID; storage.saveTerminalBundleID(bundleID)
     }
 }

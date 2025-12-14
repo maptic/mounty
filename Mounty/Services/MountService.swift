@@ -3,6 +3,14 @@ import NetFS
 import AppKit
 import ServiceManagement
 
+/// **Action Service (The Builder)**
+///
+/// This service handles the *imperative* commands to modify the system state.
+/// - Connects to servers using `NetFS` (bypassing Finder UI).
+/// - Unmounts drives.
+/// - Opens Finder/Terminal.
+///
+/// It does **not** track state. It only executes commands.
 struct MountService {
     
     // MARK: - Mounting (NetFS)
@@ -16,32 +24,25 @@ struct MountService {
             var mountpoints: Unmanaged<CFArray>? = nil
             let cfUrl = url as CFURL
             
-            // Configuration to allow UI Prompts and access Keychain
+            // Allow UI interaction (e.g. Password prompt) if Keychain lookup fails
             let openOptions: [String: Any] = [
-                // Allows the OS to prompt for Username/Password if not in Keychain
                 "AllowUserInteraction": true,
-                // Ensures we don't accidentally mount inside another mount
                 "NoMountOnDir": true
             ]
             
-            // Convert to CFMutableDictionary for the C-API
             let rawOptions = openOptions as CFDictionary
             let mutableOpenOptions = CFDictionaryCreateMutableCopy(nil, 0, rawOptions)
             
-            // Call NetFSMountURLSync
-            // Arguments: URL, MountPath (nil=default), User (nil=auto), Pass (nil=auto), OpenOptions, MountOptions, Results
             let result = NetFSMountURLSync(cfUrl, nil, nil, nil, mutableOpenOptions, nil, &mountpoints)
             
-            // Check Success (0)
             if result == 0,
                let points = mountpoints?.takeRetainedValue() as? [String],
                let path = points.first {
                 return path
             }
             
-            // Debugging info if it fails (check Console.app)
             if result != 0 {
-                print("[MountService] NetFSMountURLSync failed with error code: \(result)")
+                print("[MountService] NetFSMountURLSync failed with error: \(result)")
             }
             
             return nil
@@ -51,16 +52,18 @@ struct MountService {
     // MARK: - Unmounting
     
     static func unmount(path: String) async {
-        let url = URL(fileURLWithPath: path)
-        
+        // Run on background thread to prevent UI blocking during unmount
         await Task.detached(priority: .userInitiated) {
+            let url = URL(fileURLWithPath: path)
+            
             do {
-                // Try "Polite" unmount via NSWorkspace (allows closing files)
-                // Note: Synchronous call wrapped in Task.detached to prevent UI blocking
+                // 1. Try "Polite" unmount (NSWorkspace)
+                // This allows apps to save changes before closing
                 try NSWorkspace.shared.unmountAndEjectDevice(at: url)
             } catch {
                 print("[MountService] Polite unmount failed. Forcing...")
-                // Fallback: Force Unmount (C-API)
+                // 2. Fallback: Force Unmount (C-API)
+                // This cuts the connection immediately
                 _ = Darwin.unmount(path, MNT_FORCE)
             }
         }.value
@@ -76,7 +79,6 @@ struct MountService {
     
     @MainActor
     static func openInTerminal(path: String, with bundleId: String? = nil) {
-        let url = URL(fileURLWithPath: path)
         let terminalId = bundleId ?? "com.apple.Terminal"
         
         if let appUrl = NSWorkspace.shared.urlForApplication(withBundleIdentifier: terminalId) {

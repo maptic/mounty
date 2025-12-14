@@ -1,20 +1,31 @@
 import Foundation
 
 struct PersistenceService {
-    private let key = "SavedFilers"
+    private let keyFilers = "SavedFilers"
+    private let keyTerminal = "PreferredTerminal"
     private let defaults = UserDefaults.standard
     
-    func save(_ filers: [Filer]) {
+    // MARK: - Filers
+    func saveFilers(_ filers: [Filer]) {
         if let encoded = try? JSONEncoder().encode(filers) {
-            defaults.set(encoded, forKey: key)
+            defaults.set(encoded, forKey: keyFilers)
         }
     }
     
-    func load() -> [Filer] {
-        if let data = defaults.data(forKey: key),
+    func loadFilers() -> [Filer] {
+        if let data = defaults.data(forKey: keyFilers),
            let decoded = try? JSONDecoder().decode([Filer].self, from: data) {
             return decoded
         }
         return []
+    }
+    
+    // MARK: - Preferences
+    func saveTerminalBundleID(_ bundleID: String) {
+        defaults.set(bundleID, forKey: keyTerminal)
+    }
+    
+    func loadTerminalBundleID() -> String {
+        return defaults.string(forKey: keyTerminal) ?? "com.apple.Terminal"
     }
 }

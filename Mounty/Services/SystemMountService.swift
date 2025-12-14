@@ -7,11 +7,13 @@ struct SystemMountService {
         let source: String
     }
     
-    /// Low-level C-API call to get mount table
+    /// Fetches currently mounted filesystems using getmntinfo(3).
     nonisolated static func getSystemMounts() -> [MountPoint] {
         var mounts: [MountPoint] = []
         var mntbuf: UnsafeMutablePointer<statfs>? = nil
-        // MNT_NOWAIT is crucial to avoid hanging on dead mounts during enumeration
+        
+        // MNT_NOWAIT is critical. It returns cached kernel data immediately.
+        // MNT_WAIT would block indefinitely if a drive is hung.
         let count = getmntinfo(&mntbuf, MNT_NOWAIT)
         
         if count > 0, let mntbuf = mntbuf {
@@ -29,22 +31,19 @@ struct SystemMountService {
         return mounts
     }
     
-    /// Matches a Filer config (smb://host/share) to a System Mount (//user@host/share)
+    /// Helper to match a Config URL (smb://host/share) to a Mount Source (//user@host/share).
     nonisolated static func findMountPath(for filer: Filer, in mounts: [MountPoint]) -> String? {
         guard let configUrl = URL(string: filer.serverAddress) else { return nil }
-        let configPath = configUrl.path.lowercased() // e.g., "/share"
+        let configPath = configUrl.path.lowercased()
         let configHost = configUrl.host?.lowercased() ?? "unknown"
         
         for mount in mounts {
             let source = mount.source.lowercased()
-            
-            // Check 1: Host match
             if source.contains(configHost) {
-                // Check 2: Path match (if share path is specified)
+                // If config has a path, ensure suffix matches. Otherwise match root host.
                 if configPath.count > 1 {
                     if source.hasSuffix(configPath) { return mount.path }
                 } else {
-                    // Root mount
                     return mount.path
                 }
             }

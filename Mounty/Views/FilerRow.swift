@@ -32,7 +32,7 @@ struct FilerRow: View {
             // --- Action Buttons ---
             HStack(spacing: 8) {
                 
-                // 1. Automount Toggle (The Bolt)
+                // 1. Automount Toggle (Bolt)
                 Button {
                     manager.toggleAutomount(filer.id)
                 } label: {
@@ -43,33 +43,35 @@ struct FilerRow: View {
                 .buttonStyle(.plain)
                 .help(filer.isAutomountEnabled ? "Disable Automount" : "Enable Automount")
                 
-                // 2. Mounted Actions (Terminal / Copy)
+                // 2. Mounted Actions
                 if isMounted {
-                    Button { manager.openTerminal(for: filer) } label: {
+                    Button { manager.openInTerminal(filer) } label: {
                         Image(systemName: "terminal.fill")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain).help("Open Terminal")
+                    .buttonStyle(.plain).help("Open in Terminal")
 
-                    Button { manager.copyPath(for: filer) } label: {
-                        Image(systemName: "doc.on.doc")
+                    Button { manager.openInFinder(filer) } label: {
+                        Image(systemName: "folder.fill")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain).help("Copy Path")
+                    .buttonStyle(.plain).help("Show in Finder")
                 }
                 
-                // 3. Connect / Disconnect Main Action
+                // 3. Connect/Disconnect
                 Button {
                     if isMounted { manager.unmount(filer) } else { manager.mount(filer) }
                 } label: {
                     if isBusy {
                         ProgressView().controlSize(.mini).scaleEffect(0.7)
                     } else {
-                        Image(systemName: isMounted ? "cable.connector.slash" : "cable.connector.horizontal")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundColor(isMounted ? .red : .green)
+                        // Plug icons (horizontal = disconnected, slash = connected/disconnect)
+                        Image(systemName: isMounted ? "network.slash" : "network")
+                            .font(.system(size: 16, weight: .medium))
+                            // Disconnect is Red, Connect is Standard
+                            .foregroundColor(isMounted ? .red : .primary)
                             .contentShape(Rectangle())
                     }
                 }
@@ -80,6 +82,10 @@ struct FilerRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        // Double-click shortcut
+        .onTapGesture(count: 2) {
+            if isMounted { manager.openInFinder(filer) }
+        }
         .contextMenu {
             Button(role: .destructive) { manager.removeFiler(filer.id) } label: {
                 Text("Remove Filer")

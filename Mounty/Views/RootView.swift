@@ -1,14 +1,5 @@
-//
-//  RootView.swift
-//  Mounty
-//
-//  Created by Merlin Unterfinger on 12.12.2025.
-//
-
-
 import SwiftUI
 
-/// The container that handles switching between the List, Add, and Settings screens
 struct RootView: View {
     @StateObject var manager: FilerManager
     @State private var viewMode: AppViewMode = .list
@@ -29,7 +20,7 @@ struct RootView: View {
                     .transition(.move(edge: .trailing))
             }
         }
-        .frame(width: 340, height: 400) // Fixed size for menu bar popover
+        .frame(width: 340, height: 420)
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: viewMode)
     }
 }

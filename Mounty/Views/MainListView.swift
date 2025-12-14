@@ -33,7 +33,6 @@ struct MainListView: View {
                     Spacer()
                     Image(systemName: "externaldrive.badge.plus")
                         .font(.system(size: 48))
-                        // FIX: Use NSColor.tertiaryLabelColor
                         .foregroundColor(Color(NSColor.tertiaryLabelColor))
                     Text("No filers configured")
                         .foregroundColor(.secondary)
@@ -71,6 +70,12 @@ struct MainListView: View {
             }
             .padding(12)
             .background(.regularMaterial)
+        }
+        // Error Alert
+        .alert("Error", isPresented: $manager.showError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(manager.lastError ?? "Unknown error")
         }
     }
 }

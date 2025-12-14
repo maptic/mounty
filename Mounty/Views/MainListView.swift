@@ -8,21 +8,15 @@ struct MainListView: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Text("Mounty")
-                    .font(.headline)
-                    .fontWeight(.bold)
+                Text("Mounty").font(.headline).fontWeight(.bold)
                 Spacer()
-                
                 Button { viewMode = .settings } label: {
                     Image(systemName: "gearshape.fill")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 14)).foregroundColor(.secondary)
                 }
-                .buttonStyle(.plain)
-                .help("Settings")
+                .buttonStyle(.plain).help("Settings")
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 16).padding(.vertical, 12)
             .background(.regularMaterial)
             
             Divider()
@@ -34,8 +28,7 @@ struct MainListView: View {
                     Image(systemName: "externaldrive.badge.plus")
                         .font(.system(size: 48))
                         .foregroundColor(Color(NSColor.tertiaryLabelColor))
-                    Text("No filers configured")
-                        .foregroundColor(.secondary)
+                    Text("No filers configured").foregroundColor(.secondary)
                     Button("Add Your First Filer") { viewMode = .add }
                         .buttonStyle(.borderedProminent)
                     Spacer()
@@ -56,26 +49,16 @@ struct MainListView: View {
             // Footer
             HStack {
                 Button("Quit") { NSApplication.shared.terminate(nil) }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
-                    .font(.caption)
-                
+                    .buttonStyle(.plain).foregroundColor(.secondary).font(.caption)
                 Spacer()
-                
-                Button { viewMode = .add } label: {
-                    Label("Add Filer", systemImage: "plus")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                Button { viewMode = .add } label: { Label("Add Filer", systemImage: "plus") }
+                    .buttonStyle(.bordered).controlSize(.small)
             }
-            .padding(12)
-            .background(.regularMaterial)
+            .padding(12).background(.regularMaterial)
         }
         // Error Alert
         .alert("Error", isPresented: $manager.showError) {
             Button("OK", role: .cancel) { }
-        } message: {
-            Text(manager.lastError ?? "Unknown error")
-        }
+        } message: { Text(manager.lastError ?? "Unknown error") }
     }
 }

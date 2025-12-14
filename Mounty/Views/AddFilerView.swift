@@ -11,20 +11,15 @@ struct AddFilerView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // Back Nav
             Button { viewMode = .list } label: {
-                HStack {
-                    Image(systemName: "chevron.left")
-                    Text("Back")
-                }
+                HStack { Image(systemName: "chevron.left"); Text("Back") }
             }
-            .buttonStyle(.plain)
-            .foregroundColor(.secondary)
+            .buttonStyle(.plain).foregroundColor(.secondary)
             
             Text("Add New Filer").font(.title3).fontWeight(.bold)
             
             VStack(spacing: 15) {
-                TextField("Display Name (e.g. Design Share)", text: $name)
+                TextField("Display Name", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .focused($focusedField, equals: .name)
                     .submitLabel(.next)
@@ -37,9 +32,7 @@ struct AddFilerView: View {
                     .onSubmit { save() }
                     .autocorrectionDisabled(true)
             }
-            
             Spacer()
-            
             HStack {
                 Spacer()
                 Button("Add Filer") { save() }
@@ -47,14 +40,12 @@ struct AddFilerView: View {
                     .disabled(name.isEmpty || address.count < 6)
             }
         }
-        .padding(20)
-        .onAppear { focusedField = .name }
+        .padding(20).onAppear { focusedField = .name }
     }
     
     private func save() {
         guard !name.isEmpty, address.count >= 6 else { return }
-        let newFiler = Filer(name: name, serverAddress: address)
-        manager.addFiler(newFiler)
+        manager.addFiler(Filer(name: name, serverAddress: address))
         viewMode = .list
     }
 }

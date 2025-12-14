@@ -24,7 +24,6 @@ struct MountService {
             var mountpoints: Unmanaged<CFArray>? = nil
             let cfUrl = url as CFURL
             
-            // Allow UI interaction (e.g. Password prompt) if Keychain lookup fails
             let openOptions: [String: Any] = [
                 "AllowUserInteraction": true,
                 "NoMountOnDir": true
@@ -52,18 +51,11 @@ struct MountService {
     // MARK: - Unmounting
     
     static func unmount(path: String) async {
-        // Run on background thread to prevent UI blocking during unmount
         await Task.detached(priority: .userInitiated) {
             let url = URL(fileURLWithPath: path)
-            
             do {
-                // 1. Try "Polite" unmount (NSWorkspace)
-                // This allows apps to save changes before closing
                 try NSWorkspace.shared.unmountAndEjectDevice(at: url)
             } catch {
-                print("[MountService] Polite unmount failed. Forcing...")
-                // 2. Fallback: Force Unmount (C-API)
-                // This cuts the connection immediately
                 _ = Darwin.unmount(path, MNT_FORCE)
             }
         }.value
@@ -74,18 +66,24 @@ struct MountService {
     @MainActor
     static func openInFinder(path: String) {
         let url = URL(fileURLWithPath: path)
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        NSWorkspace.shared.open(url)
     }
     
     @MainActor
     static func openInTerminal(path: String, with bundleId: String? = nil) {
+        let url = URL(fileURLWithPath: path)
         let terminalId = bundleId ?? "com.apple.Terminal"
         
-        if let appUrl = NSWorkspace.shared.urlForApplication(withBundleIdentifier: terminalId) {
-            let config = NSWorkspace.OpenConfiguration()
-            config.arguments = [path] // Pass path as argument to set working directory
-            NSWorkspace.shared.openApplication(at: appUrl, configuration: config, completionHandler: nil)
+        guard let appUrl = NSWorkspace.shared.urlForApplication(withBundleIdentifier: terminalId) else {
+            // Fallback: Open with default system handler for folders if app not found
+            NSWorkspace.shared.open(url)
+            return
         }
+        
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        
+        NSWorkspace.shared.open([url], withApplicationAt: appUrl, configuration: config, completionHandler: nil)
     }
     
     // MARK: - Login Item

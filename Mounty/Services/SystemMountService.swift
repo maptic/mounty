@@ -58,4 +58,23 @@ struct SystemMountService {
         }
         return nil
     }
+
+    /// Checks if a network URL is already mounted.
+    nonisolated static func findMountPath(forURL url: URL) -> String? {
+        let mounts = getSystemMounts()
+        let host = url.host?.lowercased() ?? "unknown"
+        let path = url.path.lowercased()
+
+        for mount in mounts {
+            let source = mount.source.lowercased()
+            if source.contains(host) {
+                if path.count > 1 {
+                    if source.hasSuffix(path) { return mount.path }
+                } else {
+                    return mount.path
+                }
+            }
+        }
+        return nil
+    }
 }

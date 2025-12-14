@@ -6,10 +6,13 @@ import os
 class FilerManager: ObservableObject {
     // MARK: - UI State
     @Published var filers: [Filer] = []
-    @Published var mountPaths: [UUID: String] = [:] // Maps Filer ID -> Local Path
-    @Published var busyFilers: Set<UUID> = []       // Loading indicators
+    @Published var mountPaths: [UUID: String] = [:]
+    @Published var busyFilers: Set<UUID> = []
     @Published var launchAtLogin: Bool = MountService.isLoginItemEnabled()
     @Published var preferredTerminal: String
+    
+    // Available Terminals (Filtered by what is installed)
+    @Published var availableTerminals: [(name: String, id: String)] = []
     
     // Error Handling
     @Published var lastError: String? = nil
@@ -21,12 +24,14 @@ class FilerManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Mounty", category: "Manager")
     
-    // Available Terminals for Settings
-    let terminalOptions = [
+    // Supported Terminal candidates
+    private let knownTerminals = [
         ("Terminal", "com.apple.Terminal"),
         ("iTerm2", "com.googlecode.iterm2"),
         ("Hyper", "co.zeit.hyper"),
-        ("Warp", "dev.warp.Warp-Stable")
+        ("Warp", "dev.warp.Warp-Stable"),
+        ("Alacritty", "org.alacritty"),
+        ("Kitty", "net.kovidgoyal.kitty")
     ]
     
     init() {
@@ -34,25 +39,35 @@ class FilerManager: ObservableObject {
         self.preferredTerminal = storage.loadTerminalBundleID()
         
         setupPipelines()
+        refreshInstalledTerminals()
         
-        // Initial async refresh
+        // Initial Refresh
         Task { await refreshState() }
     }
     
-    // MARK: - Event Driven Pipelines
+    // MARK: - Setup
+    
+    private func refreshInstalledTerminals() {
+        // Filter known candidates by checking if they exist on the system
+        self.availableTerminals = knownTerminals.filter { (_, bundleID) in
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
+        }
+        
+        // If the saved preference was deleted/uninstalled, reset to default
+        if !availableTerminals.contains(where: { $0.id == preferredTerminal }) {
+            preferredTerminal = "com.apple.Terminal"
+        }
+    }
     
     private func setupPipelines() {
-        // 1. Network Change (VPN/WiFi) -> Trigger Automount & Zombie Check
         eventMonitor.networkChanged
             .receive(on: RunLoop.main)
             .sink { [weak self] in
-                self?.logger.debug("Network Event: Running logic")
                 Task { await self?.runAutomount() }
                 Task { await self?.refreshState() }
             }
             .store(in: &cancellables)
         
-        // 2. FileSystem Change (Mount/Unmount) -> Refresh UI
         eventMonitor.fileSystemChanged
             .receive(on: RunLoop.main)
             .sink { [weak self] in
@@ -60,7 +75,6 @@ class FilerManager: ObservableObject {
             }
             .store(in: &cancellables)
         
-        // 3. Heartbeat (60s) -> Cleanup Zombies missed by OS notifications
         Timer.publish(every: 60, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
@@ -124,7 +138,7 @@ class FilerManager: ObservableObject {
             for filer in filers {
                 group.addTask {
                     if let path = SystemMountService.findMountPath(for: filer, in: systemMounts) {
-                        // Crucial Zombie Check
+                        // Zombie Check
                         if ReachabilityService.isMountPointAlive(path: path) {
                             return (filer.id, path)
                         }
@@ -148,9 +162,9 @@ class FilerManager: ObservableObject {
         Task {
             if let path = await MountService.mount(url: url) {
                 self.mountPaths[filer.id] = path
-                logger.info("Mounted \(filer.name) successfully")
+                logger.info("Mounted \(filer.name)")
             } else {
-                self.lastError = "Could not connect to \(filer.name). Please check server address and keychain credentials."
+                self.lastError = "Could not connect to \(filer.name). Check address and keychain."
                 self.showError = true
             }
             self.busyFilers.remove(filer.id)

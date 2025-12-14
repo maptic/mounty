@@ -1,19 +1,16 @@
 import Foundation
 import Network
 
-/// Verifies responsiveness of servers and mount points.
+/// Verifies server and mount point responsiveness.
 struct ReachabilityService {
 
-    /// Filesystem I/O Check (Zombie Detection).
-    /// Forces a directory listing to bypass Kernel metadata cache.
-    /// Critical for detecting dropped VPN connections where `access()` returns false positives.
+    /// Validates filesystem responsiveness via I/O.
     nonisolated static func isMountPointAlive(path: String) -> Bool {
         let group = DispatchGroup()
         group.enter()
         var isAlive = false
 
         DispatchQueue.global(qos: .userInteractive).async {
-            // Perform lightweight I/O.
             if (try? FileManager.default.contentsOfDirectory(atPath: path))
                 != nil
             {
@@ -22,13 +19,11 @@ struct ReachabilityService {
             group.leave()
         }
 
-        // Strict 1.0s timeout catches hung connections immediately.
         let result = group.wait(timeout: .now() + 1.0)
         return result == .success && isAlive
     }
 
-    /// Network TCP Check (Port 445).
-    /// Detects missing routes (VPN drops) prior to mounting.
+    /// Validates TCP connectivity to SMB port (445).
     static func isServerReachable(address: String) async -> Bool {
         guard let host = URL(string: address)?.host else { return false }
 
@@ -40,12 +35,15 @@ struct ReachabilityService {
                 using: .tcp
             )
 
-            let workItem = DispatchWorkItem {
-                if conn.state != .ready {
-                    conn.cancel()
+            // FIX: Use [weak conn] to break the retain cycle.
+            // Cycle was: conn -> handler -> workItem -> conn
+            let workItem = DispatchWorkItem { [weak conn] in
+                if conn?.state != .ready {
+                    conn?.cancel()
                     continuation.resume(returning: false)
                 }
             }
+
             // 2s Handshake timeout
             DispatchQueue.global().asyncAfter(
                 deadline: .now() + 2.0,

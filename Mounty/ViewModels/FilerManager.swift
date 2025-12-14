@@ -3,7 +3,7 @@ import Network
 import SwiftUI
 import os
 
-/// ViewModel: Orchestrates logic, automounting, and state management.
+/// ViewModel: Orchestrates detection, automounting, and state management.
 @MainActor
 class FilerManager: ObservableObject {
 
@@ -18,7 +18,6 @@ class FilerManager: ObservableObject {
     @Published var lastError: String? = nil
     @Published var showError: Bool = false
 
-    // Internal State
     private var isNetworkUp: Bool = true
 
     // Dependencies
@@ -46,7 +45,11 @@ class FilerManager: ObservableObject {
         setupPipelines()
         refreshInstalledTerminals()
 
-        Task { await refreshState() }
+        // Initial Refresh (Serialized)
+        Task {
+            await refreshState()
+            await runAutomount()
+        }
     }
 
     // MARK: - Event Pipelines
@@ -64,8 +67,11 @@ class FilerManager: ObservableObject {
                     logger.info(
                         "Global Network Changed: \(self.isNetworkUp ? "UP" : "DOWN")"
                     )
-                    Task { await self.refreshState() }
-                    if self.isNetworkUp { Task { await self.runAutomount() } }
+                    // Serialize logic to prevent race condition
+                    Task {
+                        await self.refreshState()
+                        if self.isNetworkUp { await self.runAutomount() }
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -75,10 +81,12 @@ class FilerManager: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] in
                 self?.logger.info(
-                    "Network Interfaces Changed. Retrying connections."
+                    "Interface topology changed. Retrying connections."
                 )
-                Task { await self?.refreshState() }
-                Task { await self?.runAutomount() }
+                Task {
+                    await self?.refreshState()
+                    await self?.runAutomount()
+                }
             }
             .store(in: &cancellables)
 
@@ -104,11 +112,12 @@ class FilerManager: ObservableObject {
             if mountPaths[filer.id] == nil && !busyFilers.contains(filer.id) {
                 busyFilers.insert(filer.id)
 
-                // TCP Pre-check to avoid Finder error prompts
+                // TCP Pre-check
                 let isReachable = await ReachabilityService.isServerReachable(
                     address: filer.serverAddress
                 )
 
+                // Re-verify mount status after TCP check to prevent race
                 if isReachable && mountPaths[filer.id] == nil {
                     guard let url = URL(string: filer.serverAddress) else {
                         continue
@@ -123,8 +132,6 @@ class FilerManager: ObservableObject {
             }
         }
     }
-
-    // MARK: - Logic: Refresh State
 
     func refreshState() async {
         let currentFilers = self.filers
@@ -145,12 +152,12 @@ class FilerManager: ObservableObject {
         }
     }
 
-    /// Detects active mounts. Combines Kernel data with Liveness checks.
+    /// Detects active mounts using Two-Factor Liveness Check (TCP + I/O).
     nonisolated private static func detectMounts(
         filers: [Filer],
         isNetworkUp: Bool
     ) async -> [UUID: String] {
-        if !isNetworkUp { return [:] }  // Circuit breaker
+        if !isNetworkUp { return [:] }
 
         let systemMounts = SystemMountService.getSystemMounts()
         var results: [UUID: String] = [:]
@@ -167,7 +174,6 @@ class FilerManager: ObservableObject {
                         if await ReachabilityService.isServerReachable(
                             address: filer.serverAddress
                         ) {
-
                             // 2. I/O Check (Catches hung Kernels)
                             if ReachabilityService.isMountPointAlive(path: path)
                             {
@@ -185,7 +191,7 @@ class FilerManager: ObservableObject {
         return results
     }
 
-    // MARK: - Setup Helpers
+    // MARK: - Actions
 
     private func refreshInstalledTerminals() {
         self.availableTerminals = knownTerminals.filter { (_, bundleID) in
@@ -197,8 +203,6 @@ class FilerManager: ObservableObject {
         }
     }
 
-    // MARK: - Actions
-
     func mount(_ filer: Filer) {
         guard let url = URL(string: filer.serverAddress) else { return }
         busyFilers.insert(filer.id)
@@ -209,7 +213,7 @@ class FilerManager: ObservableObject {
                 logger.info("Manually mounted \(filer.name)")
             } else {
                 self.lastError =
-                    "Could not connect to \(filer.name). Check address and keychain."
+                    "Connection failed. Verify address and keychain credentials."
                 self.showError = true
             }
             self.busyFilers.remove(filer.id)
@@ -221,7 +225,7 @@ class FilerManager: ObservableObject {
         disableAutomount(for: filer)
         guard let path = mountPaths[filer.id] else { return }
 
-        mountPaths.removeValue(forKey: filer.id)  // Optimistic Update
+        mountPaths.removeValue(forKey: filer.id)
         busyFilers.insert(filer.id)
 
         Task {

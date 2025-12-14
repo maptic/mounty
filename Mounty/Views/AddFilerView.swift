@@ -6,16 +6,24 @@ struct AddFilerView: View {
     
     @State private var name = ""
     @State private var address = "smb://"
-    
     @FocusState private var focusedField: Field?
     enum Field { case name, address }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Add New Filer").font(.headline).padding(.top, 5)
+        VStack(alignment: .leading, spacing: 20) {
+            Button { viewMode = .list } label: {
+                HStack {
+                    Image(systemName: "chevron.left")
+                    Text("Back")
+                }
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.secondary)
             
-            VStack(spacing: 12) {
-                TextField("Display Name (e.g. Work)", text: $name)
+            Text("Add New Filer").font(.title3).fontWeight(.bold)
+            
+            VStack(spacing: 15) {
+                TextField("Display Name (e.g. Design Share)", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .focused($focusedField, equals: .name)
                     .submitLabel(.next)
@@ -25,29 +33,25 @@ struct AddFilerView: View {
                     .textFieldStyle(.roundedBorder)
                     .focused($focusedField, equals: .address)
                     .submitLabel(.done)
-                    .onSubmit { addFiler() }
+                    .onSubmit { save() }
                     .autocorrectionDisabled(true)
             }
+            
             Spacer()
             
             HStack {
-                Button("Cancel") { viewMode = .list }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Add") { addFiler() }
+                Button("Add Filer") { save() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(name.isEmpty || address.count < 7)
-                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.isEmpty || address.count < 6)
             }
         }
-        .padding()
-        .task {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            focusedField = .name
-        }
+        .padding(20)
+        .onAppear { focusedField = .name }
     }
     
-    private func addFiler() {
-        guard !name.isEmpty, address.count >= 7 else { return }
+    private func save() {
+        guard !name.isEmpty, address.count >= 6 else { return }
         let newFiler = Filer(name: name, serverAddress: address)
         manager.addFiler(newFiler)
         viewMode = .list

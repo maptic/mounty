@@ -1,5 +1,6 @@
 import Foundation
 
+/// Handles data storage using UserDefaults.
 struct PersistenceService {
     private let keyFilers = "SavedFilers"
     private let keyTerminal = "PreferredTerminal"

@@ -1,11 +1,12 @@
 import Foundation
 
-struct Filer: Identifiable, Codable, Equatable, Sendable {
+struct Volume: Identifiable, Codable, Equatable, Sendable {
     var id = UUID()
     var name: String
     var serverAddress: String
     var isAutomountEnabled: Bool = false
-
+    var dateAdded: Date = Date() // For sorting
+    
     var host: String? { URL(string: serverAddress)?.host }
 }
 

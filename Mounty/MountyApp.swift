@@ -2,7 +2,6 @@ import SwiftUI
 
 @main
 struct MountyApp: App {
-    // Single source of truth for app state
     @StateObject var manager = FilerManager()
     
     var body: some Scene {

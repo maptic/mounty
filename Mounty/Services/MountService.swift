@@ -2,35 +2,19 @@ import Foundation
 import NetFS
 import AppKit
 import ServiceManagement
+import Darwin
 
-/// **Action Service (The Builder)**
-///
-/// This service handles the *imperative* commands to modify the system state.
-/// - Connects to servers using `NetFS` (bypassing Finder UI).
-/// - Unmounts drives.
-/// - Opens Finder/Terminal.
-///
-/// It does **not** track state. It only executes commands.
+/// Action Service. Handles Mounting, Unmounting, and App Launching.
 struct MountService {
     
-    // MARK: - Mounting (NetFS)
-    
-    /// Mounts an SMB share using NetFS.
-    ///
-    /// - Important: **App Sandbox must be DISABLED** in Xcode "Signing & Capabilities".
-    /// If Sandboxed, this will fail with error 0x5 and cannot access the System Keychain.
+    /// Mounts using NetFSMountURLSync.
+    /// - Important: App Sandbox must be DISABLED to use System Keychain.
     static func mount(url: URL) async -> String? {
         return await Task.detached(priority: .userInitiated) {
             var mountpoints: Unmanaged<CFArray>? = nil
             let cfUrl = url as CFURL
-            
-            let openOptions: [String: Any] = [
-                "AllowUserInteraction": true,
-                "NoMountOnDir": true
-            ]
-            
-            let rawOptions = openOptions as CFDictionary
-            let mutableOpenOptions = CFDictionaryCreateMutableCopy(nil, 0, rawOptions)
+            let openOptions: [String: Any] = ["AllowUserInteraction": true, "NoMountOnDir": true]
+            let mutableOpenOptions = CFDictionaryCreateMutableCopy(nil, 0, openOptions as CFDictionary)
             
             let result = NetFSMountURLSync(cfUrl, nil, nil, nil, mutableOpenOptions, nil, &mountpoints)
             
@@ -39,17 +23,11 @@ struct MountService {
                let path = points.first {
                 return path
             }
-            
-            if result != 0 {
-                print("[MountService] NetFSMountURLSync failed with error: \(result)")
-            }
-            
             return nil
         }.value
     }
     
-    // MARK: - Unmounting
-    
+    /// Unmounts using polite request first, falls back to Force Unmount.
     static func unmount(path: String) async {
         await Task.detached(priority: .userInitiated) {
             let url = URL(fileURLWithPath: path)
@@ -61,12 +39,9 @@ struct MountService {
         }.value
     }
     
-    // MARK: - App Actions
-    
     @MainActor
     static func openInFinder(path: String) {
-        let url = URL(fileURLWithPath: path)
-        NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
     
     @MainActor
@@ -75,30 +50,22 @@ struct MountService {
         let terminalId = bundleId ?? "com.apple.Terminal"
         
         guard let appUrl = NSWorkspace.shared.urlForApplication(withBundleIdentifier: terminalId) else {
-            // Fallback: Open with default system handler for folders if app not found
-            NSWorkspace.shared.open(url)
+            NSWorkspace.shared.open(url) // Fallback
             return
         }
         
         let config = NSWorkspace.OpenConfiguration()
         config.activates = true
-        
         NSWorkspace.shared.open([url], withApplicationAt: appUrl, configuration: config, completionHandler: nil)
     }
     
-    // MARK: - Login Item
-    
+    // Login Item Management
     @MainActor
     static func toggleLoginItem(enabled: Bool) {
         do {
-            if enabled {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
-            }
-        } catch {
-            print("Login Item Error: \(error)")
-        }
+            if enabled { try SMAppService.mainApp.register() }
+            else { try SMAppService.mainApp.unregister() }
+        } catch { print("Login Item Error: \(error)") }
     }
     
     @MainActor

@@ -5,8 +5,8 @@ import Combine
 import os
 
 class EventMonitorService {
-    // Publishers for the ViewModel to subscribe to
-    let networkChanged = PassthroughSubject<Void, Never>()
+    // Publish the status, default to satisfied (connected) so we don't block on launch
+    let networkStatus = CurrentValueSubject<NWPath.Status, Never>(.satisfied)
     let fileSystemChanged = PassthroughSubject<Void, Never>()
     
     private let monitor = NWPathMonitor()
@@ -21,12 +21,14 @@ class EventMonitorService {
     
     private func startNetworkMonitoring() {
         monitor.pathUpdateHandler = { [weak self] path in
-            self?.logger.debug("Network path changed: \(path.status == .satisfied ? "Up" : "Down")")
+            guard let self = self else { return }
             
-            // Debounce to avoid rapid flickering (e.g., switching WiFi APs)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                self?.networkChanged.send()
-            }
+            let statusStr = path.status == .satisfied ? "Up" : "Down"
+            self.logger.debug("Network Path Update: \(statusStr)")
+            
+            // Emit the new status immediately
+            // We use RunLoop.main in the Manager, so it's safe to emit from bg queue here
+            self.networkStatus.send(path.status)
         }
         monitor.start(queue: queue)
     }
@@ -34,7 +36,6 @@ class EventMonitorService {
     private func startFileSystemMonitoring() {
         let center = NSWorkspace.shared.notificationCenter
         
-        // React immediately when drives are mounted/unmounted externally
         Publishers.Merge3(
             center.publisher(for: NSWorkspace.didMountNotification),
             center.publisher(for: NSWorkspace.didUnmountNotification),

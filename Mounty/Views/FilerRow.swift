@@ -14,6 +14,7 @@ struct FilerRow: View {
             Image(systemName: "server.rack")
                 .font(.system(size: 24))
                 .foregroundColor(isMounted ? .accentColor : .secondary.opacity(0.5))
+                .help(isMounted ? "Mounted at: \(currentPath)" : "Server: \(filer.serverAddress)")
             
             // Info Text
             VStack(alignment: .leading, spacing: 2) {
@@ -26,13 +27,14 @@ struct FilerRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+            .help(filer.serverAddress) // Tooltip for the text area
             
             Spacer()
             
             // --- Action Buttons ---
             HStack(spacing: 8) {
                 
-                // 1. Automount Toggle (Bolt)
+                // 1. Automount Toggle
                 Button {
                     manager.toggleAutomount(filer.id)
                 } label: {
@@ -41,23 +43,27 @@ struct FilerRow: View {
                         .foregroundColor(filer.isAutomountEnabled ? .orange : .secondary.opacity(0.3))
                 }
                 .buttonStyle(.plain)
-                .help(filer.isAutomountEnabled ? "Disable Automount" : "Enable Automount")
+                .help(filer.isAutomountEnabled ? "Disable Automount for \(filer.name)" : "Enable Automount for \(filer.name)")
                 
                 // 2. Mounted Actions
                 if isMounted {
+                    // Terminal
                     Button { manager.openInTerminal(filer) } label: {
                         Image(systemName: "terminal.fill")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain).help("Open in Terminal")
+                    .buttonStyle(.plain)
+                    .help("Open Terminal at \(filer.name)")
 
+                    // Finder
                     Button { manager.openInFinder(filer) } label: {
                         Image(systemName: "folder.fill")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain).help("Show in Finder")
+                    .buttonStyle(.plain)
+                    .help("Reveal \(filer.name) in Finder")
                 }
                 
                 // 3. Connect/Disconnect
@@ -67,22 +73,21 @@ struct FilerRow: View {
                     if isBusy {
                         ProgressView().controlSize(.mini).scaleEffect(0.7)
                     } else {
-                        // Plug icons (horizontal = disconnected, slash = connected/disconnect)
+                        // Plug icons
                         Image(systemName: isMounted ? "network.slash" : "network")
                             .font(.system(size: 16, weight: .medium))
-                            // Disconnect is Red, Connect is Standard
                             .foregroundColor(isMounted ? .red : .primary)
                             .contentShape(Rectangle())
                     }
                 }
                 .buttonStyle(.plain)
                 .disabled(isBusy)
-                .help(isMounted ? "Disconnect" : "Connect")
+                .help(isMounted ? "Disconnect \(filer.name)" : "Connect to \(filer.name)")
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        // Double-click shortcut
+        // Double-click shortcut to open Finder
         .onTapGesture(count: 2) {
             if isMounted { manager.openInFinder(filer) }
         }

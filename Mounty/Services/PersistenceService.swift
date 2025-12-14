@@ -2,19 +2,19 @@ import Foundation
 
 /// Manages persistent storage via UserDefaults.
 struct PersistenceService {
-    private let keyFilers = "SavedFilers"
+    private let keyVolumes = "SavedVolumes"
     private let keyTerminal = "PreferredTerminal"
     private let defaults = UserDefaults.standard
 
-    func saveFilers(_ filers: [Filer]) {
-        if let encoded = try? JSONEncoder().encode(filers) {
-            defaults.set(encoded, forKey: keyFilers)
+    func saveVolumes(_ volumes: [Volume]) {
+        if let encoded = try? JSONEncoder().encode(volumes) {
+            defaults.set(encoded, forKey: keyVolumes)
         }
     }
 
-    func loadFilers() -> [Filer] {
-        if let data = defaults.data(forKey: keyFilers),
-            let decoded = try? JSONDecoder().decode([Filer].self, from: data)
+    func loadVolumes() -> [Volume] {
+        if let data = defaults.data(forKey: keyVolumes),
+            let decoded = try? JSONDecoder().decode([Volume].self, from: data)
         {
             return decoded
         }

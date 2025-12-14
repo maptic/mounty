@@ -3,7 +3,7 @@ import SwiftUI
 @main
 @MainActor
 struct MountyApp: App {
-    @StateObject var manager = FilerManager()
+    @StateObject var manager = VolumeManager()
 
     var body: some Scene {
         MenuBarExtra(

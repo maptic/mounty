@@ -35,8 +35,6 @@ struct ReachabilityService {
                 using: .tcp
             )
 
-            // FIX: Use [weak conn] to break the retain cycle.
-            // Cycle was: conn -> handler -> workItem -> conn
             let workItem = DispatchWorkItem { [weak conn] in
                 if conn?.state != .ready {
                     conn?.cancel()
@@ -44,7 +42,6 @@ struct ReachabilityService {
                 }
             }
 
-            // 2s Handshake timeout
             DispatchQueue.global().asyncAfter(
                 deadline: .now() + 2.0,
                 execute: workItem

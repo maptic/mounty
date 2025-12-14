@@ -9,8 +9,6 @@ import os
 struct MountService {
 
     // MARK: - Logger
-
-    /// Detached-task safe logger
     nonisolated private static let logger = Logger(
         subsystem: "Mounty",
         category: "MountService"
@@ -19,8 +17,18 @@ struct MountService {
     // MARK: - Mounting
 
     /// Mounts network share via NetFSMountURLSync.
+    /// Returns the mount path if successful, nil otherwise.
     static func mount(url: URL) async -> String? {
         await Task.detached(priority: .userInitiated) {
+
+            // 1. Check if already mounted
+            if let existing = SystemMountService.findMountPath(forURL: url) {
+                logger.info(
+                    "Share already mounted: \(url.absoluteString) -> \(existing)"
+                )
+                return existing
+            }
+
             var mountpoints: Unmanaged<CFArray>? = nil
             let cfUrl = url as CFURL
 
@@ -43,17 +51,33 @@ struct MountService {
                 &mountpoints
             )
 
+            // 2. Success
             if result == 0,
                 let points = mountpoints?.takeRetainedValue() as? [String],
                 let path = points.first
             {
+                logger.info(
+                    "Mount successful: \(url.absoluteString) -> \(path)"
+                )
                 return path
             }
 
+            // 3. Treat Error 17 (already exists) as success
+            if result == 17,
+                let existing = SystemMountService.findMountPath(forURL: url)
+            {
+                logger.info(
+                    "Share already mounted (NetFSMountURLSync EEXIST): \(url.absoluteString) -> \(existing)"
+                )
+                return existing
+            }
+
+            // 4. Real failure
             logger.error(
                 "Mount failed: \(url.absoluteString). Error: \(result)"
             )
             return nil
+
         }.value
     }
 

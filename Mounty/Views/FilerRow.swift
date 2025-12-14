@@ -85,7 +85,6 @@ struct FilerRow: View {
                         )
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(isMounted ? .red : .primary)
-                        .contentShape(Rectangle())
                     }
                 }
                 .buttonStyle(.plain).disabled(isBusy)

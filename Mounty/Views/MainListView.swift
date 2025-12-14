@@ -6,30 +6,31 @@ struct MainListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
             HStack {
                 Text("Mounty").font(.headline).fontWeight(.bold)
                 Spacer()
                 Button {
                     viewMode = .settings
                 } label: {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 14)).foregroundColor(.secondary)
+                    Image(systemName: "gearshape.fill").foregroundColor(
+                        .secondary
+                    )
                 }
                 .buttonStyle(.plain).help("Settings")
             }
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(.regularMaterial)
+            .padding(.horizontal, 16).padding(.vertical, 12).background(
+                .regularMaterial
+            )
 
             Divider()
 
-            // Content
             if manager.filers.isEmpty {
                 VStack(spacing: 16) {
                     Spacer()
                     Image(systemName: "externaldrive.badge.plus")
-                        .font(.system(size: 48))
-                        .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                        .font(.system(size: 48)).foregroundColor(
+                            Color(NSColor.tertiaryLabelColor)
+                        )
                     Text("No filers configured").foregroundColor(.secondary)
                     Button("Add Your First Filer") { viewMode = .add }
                         .buttonStyle(.borderedProminent)
@@ -48,7 +49,6 @@ struct MainListView: View {
 
             Divider()
 
-            // Footer
             HStack {
                 Button("Quit") { NSApplication.shared.terminate(nil) }
                     .buttonStyle(.plain).foregroundColor(.secondary).font(
@@ -64,7 +64,6 @@ struct MainListView: View {
             }
             .padding(12).background(.regularMaterial)
         }
-        // Error Alert
         .alert("Error", isPresented: $manager.showError) {
             Button("OK", role: .cancel) {}
         } message: {

@@ -33,10 +33,9 @@ class EventMonitorService {
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
 
-            // Update Global Status
             self.networkStatus.send(path.status)
 
-            // VPN Detection: Fingerprint active interfaces
+            // Fingerprint interfaces to detect VPN tunnels
             let currentInterfaces = path.availableInterfaces
                 .map { "\($0.name):\($0.type)" }
                 .sorted()
@@ -44,11 +43,10 @@ class EventMonitorService {
 
             if currentInterfaces != self.lastInterfaceFingerprint {
                 self.logger.debug(
-                    "Interface change detected. Fingerprint: \(currentInterfaces, privacy: .public)"
+                    "Interface topology changed: \(currentInterfaces, privacy: .public)"
                 )
                 self.lastInterfaceFingerprint = currentInterfaces
 
-                // Debounce to allow routing tables to settle
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     self.interfacesChanged.send()
                 }
@@ -63,10 +61,8 @@ class EventMonitorService {
             center.publisher(for: NSWorkspace.didMountNotification),
             center.publisher(for: NSWorkspace.didUnmountNotification),
             center.publisher(for: NSWorkspace.didRenameVolumeNotification)
-        ).sink { [weak self] note in
-            self?.logger.debug(
-                "FileSystem event: \(note.name.rawValue, privacy: .public)"
-            )
+        ).sink { [weak self] _ in
+            self?.logger.debug("Kernel filesystem event received")
             self?.fileSystemChanged.send()
         }
         .store(in: &cancellables)

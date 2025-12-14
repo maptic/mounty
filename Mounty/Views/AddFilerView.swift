@@ -3,7 +3,6 @@ import SwiftUI
 struct AddFilerView: View {
     @ObservedObject var manager: FilerManager
     @Binding var viewMode: AppViewMode
-
     @State private var name = ""
     @State private var address = "smb://"
     @FocusState private var focusedField: Field?
@@ -25,16 +24,18 @@ struct AddFilerView: View {
 
             VStack(spacing: 15) {
                 TextField("Display Name", text: $name)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .name)
-                    .submitLabel(.next)
-                    .onSubmit { focusedField = .address }
+                    .textFieldStyle(.roundedBorder).focused(
+                        $focusedField,
+                        equals: .name
+                    )
+                    .submitLabel(.next).onSubmit { focusedField = .address }
 
-                TextField("Server (smb://server/share)", text: $address)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .address)
-                    .submitLabel(.done)
-                    .onSubmit { save() }
+                TextField("Server", text: $address)
+                    .textFieldStyle(.roundedBorder).focused(
+                        $focusedField,
+                        equals: .address
+                    )
+                    .submitLabel(.done).onSubmit { save() }
                     .autocorrectionDisabled(true)
             }
             Spacer()

@@ -1,6 +1,7 @@
 import SwiftUI
 
 @main
+@MainActor
 struct MountyApp: App {
     @StateObject var manager = FilerManager()
 

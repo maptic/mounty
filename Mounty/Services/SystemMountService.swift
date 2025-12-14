@@ -1,15 +1,14 @@
 import Darwin
 import Foundation
 
-/// Queries macOS Kernel for active mounts (Source of Truth).
+/// Queries macOS Kernel for active mount points.
 struct SystemMountService {
     struct MountPoint: Sendable {
         let path: String
         let source: String
     }
 
-    /// Fetches system mounts via `getmntinfo`.
-    /// Uses MNT_NOWAIT to return cached kernel data, preventing blocks on hung drives.
+    /// Fetches system mounts via `getmntinfo` (MNT_NOWAIT).
     nonisolated static func getSystemMounts() -> [MountPoint] {
         var mounts: [MountPoint] = []
         var mntbuf: UnsafeMutablePointer<statfs>? = nil
@@ -36,7 +35,7 @@ struct SystemMountService {
         return mounts
     }
 
-    /// Matches Filer configuration to physical mount path.
+    /// Resolves local mount path from Filer configuration.
     nonisolated static func findMountPath(
         for filer: Filer,
         in mounts: [MountPoint]

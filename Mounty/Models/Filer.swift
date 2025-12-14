@@ -5,7 +5,7 @@ struct Filer: Identifiable, Codable, Equatable, Sendable {
     var name: String
     var serverAddress: String
     var isAutomountEnabled: Bool = false
-    
+
     var host: String? { URL(string: serverAddress)?.host }
 }
 

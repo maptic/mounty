@@ -5,8 +5,8 @@ struct Volume: Identifiable, Codable, Equatable, Sendable {
     var name: String
     var serverAddress: String
     var isAutomountEnabled: Bool = false
-    var dateAdded: Date = Date() // For sorting
-    
+    var dateAdded: Date = Date()
+
     var host: String? { URL(string: serverAddress)?.host }
 }
 

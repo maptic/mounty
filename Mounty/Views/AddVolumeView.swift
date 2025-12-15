@@ -31,14 +31,12 @@ struct AddVolumeView: View {
 
             Divider()
 
-            // Form
             VStack(alignment: .leading, spacing: 18) {
                 TextField("Display Name (e.g. 'Work Drive')", text: $name)
-                    .textFieldStyle(.roundedBorder).focused(
-                        $focusedField,
-                        equals: .name
-                    )
-                    .submitLabel(.next).onSubmit { focusedField = .address }
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .name)
+                    .submitLabel(.next)
+                    .onSubmit { focusedField = .address }
 
                 Picker("Protocol", selection: $selectedProtocol) {
                     ForEach(ProtocolType.allCases) { Text($0.rawValue).tag($0) }
@@ -46,13 +44,15 @@ struct AddVolumeView: View {
                 .pickerStyle(.segmented)
 
                 HStack(spacing: 4) {
-                    Text(selectedProtocol.scheme).font(.body).foregroundColor(
-                        .secondary
-                    )
+                    Text(selectedProtocol.scheme)
+                        .font(.body)
+                        .foregroundColor(.secondary)
+
                     TextField("server/share", text: $address)
                         .textFieldStyle(.plain)
                         .focused($focusedField, equals: .address)
-                        .submitLabel(.done).onSubmit { save() }
+                        .submitLabel(.done)
+                        .onSubmit { save() }
                         .autocorrectionDisabled(true)
                         .onChange(of: address) { _, newValue in
                             for proto in ProtocolType.allCases {
@@ -67,13 +67,12 @@ struct AddVolumeView: View {
                             }
                         }
                 }
-                .padding(8).background(Color(NSColor.textBackgroundColor))
+                .padding(8)
+                .background(Color(NSColor.textBackgroundColor))
                 .cornerRadius(6)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6).stroke(
-                        Color.gray.opacity(0.3),
-                        lineWidth: 1
-                    )
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
             }
             .padding(20)

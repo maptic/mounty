@@ -21,13 +21,14 @@ struct HeaderView: View {
                     .buttonStyle(.plain)
                     .foregroundColor(.accentColor)
                 } else if showLogo {
+                    // Transparent Asset "Logo"
                     Image("Logo")
                         .resizable()
                         .scaledToFit()
                         .cornerRadius(4)
                 }
             }
-            .frame(width: 28, height: 28, alignment: .leading)
+            .frame(width: 32, height: 32, alignment: .leading)
 
             Spacer()
 
@@ -51,9 +52,13 @@ struct HeaderView: View {
                     .help(trailingHelp)
                 }
             }
-            .frame(width: 28, height: 28, alignment: .trailing)
+            // Matches leading size to keep title centered
+            .frame(width: 32, height: 32, alignment: .trailing)
         }
-        .padding(12)
+        // Reduced vertical padding (12 -> 10) to compensate for larger icon
+        // Total height remains: 32 + 10 + 10 = 52 (Same as previous 28 + 12 + 12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .background(.regularMaterial)
     }
 }

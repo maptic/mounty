@@ -19,24 +19,25 @@ struct MainListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Hidden button for keyboard shortcut
+            // Hidden button to catch keyboard shortcut
             Button("") { withAnimation { manager.showSearch.toggle() } }
                 .keyboardShortcut("f", modifiers: .command)
                 .frame(width: 0, height: 0)
 
             // --- HEADER ---
-            HStack {
+            HStack(spacing: 8) {
                 // Leading Item: Logo
                 Image("Logo")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 24, height: 24)
-                    .cornerRadius(4)
+                    .frame(width: 28, height: 28)
+                    .cornerRadius(6)
 
-                Spacer()
-
-                // Center Item: Title
-                Text("Mounty").font(.headline).fontWeight(.bold)
+                // Title (Left Aligned)
+                Text("Mounty")
+                    // Use .rounded for a modern, friendly, Apple-like feel
+                    .font(.system(.headline, design: .rounded))
+                    .fontWeight(.bold)
 
                 Spacer()
 
@@ -49,9 +50,9 @@ struct MainListView: View {
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain).help("Settings")
-                .frame(width: 24)  // Match the width of the logo for balance
+                .frame(width: 28)  // Match the width of the logo for balance
             }
-            .padding([.horizontal, .top], 12).padding(.bottom, 8)
+            .padding(12)  // Consistent padding with other views
             .transaction { transaction in
                 transaction.animation = nil
             }
@@ -90,7 +91,7 @@ struct MainListView: View {
                     .buttonStyle(.borderless)
                     .frame(width: 28, height: 28).help("Toggle Sort Direction")
                 }
-                .padding(.horizontal, 12).padding(.bottom, 8)
+                .padding(.horizontal, 12).padding(.bottom, 12)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 

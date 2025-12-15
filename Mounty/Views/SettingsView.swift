@@ -1,17 +1,17 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var manager: VolumeManager
     @Binding var viewMode: AppViewMode
 
+    // Controls for Overlays
     @State private var showResetConfirmation = false
     @State private var showQuitConfirmation = false
+    @State private var showImportDialog = false
+    @State private var showExportSuccess = false
 
-    @State private var showFileImporter = false
-    @State private var showFileExporter = false
-    @State private var importError: String?
-    @State private var showErrorAlert = false
+    // Input for Import
+    @State private var importPath = ""
 
     let appVersion =
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
@@ -22,38 +22,16 @@ struct SettingsView: View {
     var body: some View {
         ZStack {
             VStack(alignment: .leading, spacing: 0) {
-                // Header - With Centered Title and Quit Button
-                HStack {
-                    // Leading Item: Back button (Icon only)
-                    Button {
-                        withAnimation { viewMode = .list }
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .semibold))
-                    }
-                    .buttonStyle(.plain).foregroundColor(.accentColor)
-                    .frame(width: 24, alignment: .leading)
-
-                    Spacer()
-
-                    // Center Item
-                    Text("Settings").font(.headline)
-
-                    Spacer()
-
-                    // Trailing Item: Quit button
-                    Button {
+                // Header
+                HeaderView(
+                    title: "Settings",
+                    backAction: { withAnimation { viewMode = .list } },
+                    trailingAction: {
                         withAnimation { showQuitConfirmation = true }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(.red)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Quit Mounty")
-                    .frame(width: 24, alignment: .trailing)
-                }
-                .padding(12).background(.regularMaterial)
+                    },
+                    trailingIcon: ("xmark.circle.fill", .red),
+                    trailingHelp: "Quit Mounty"
+                )
 
                 Divider()
 
@@ -61,10 +39,8 @@ struct SettingsView: View {
                 Form {
                     Section(header: Text("General")) {
                         Toggle("Launch at Login", isOn: $manager.launchAtLogin)
-                            .onChange(of: manager.launchAtLogin) {
-                                _,
-                                newValue in
-                                manager.toggleLaunchAtLogin(newValue)
+                            .onChange(of: manager.launchAtLogin) { _, v in
+                                manager.toggleLaunchAtLogin(v)
                             }
 
                         Picker(
@@ -75,80 +51,91 @@ struct SettingsView: View {
                                 Text($0.name).tag($0.id)
                             }
                         }
-                        .onChange(of: manager.preferredTerminal) {
-                            _,
-                            newValue in
-                            manager.setPreferredTerminal(newValue)
+                        .onChange(of: manager.preferredTerminal) { _, v in
+                            manager.setPreferredTerminal(v)
                         }
                     }
 
-                    Section(header: Text("Data Management")) {
-                        HStack {
-                            Spacer()
+                    Section(header: Text("Volumes")) {
+                        HStack(spacing: 12) {
+                            // Import
                             Button {
-                                showFileImporter = true
-                            } label: {
-                                Image(systemName: "square.and.arrow.down")
-                            }
-                            .help("Import from Backup")
-
-                            Button {
-                                showFileExporter = true
+                                importPath = ""
+                                withAnimation { showImportDialog = true }
                             } label: {
                                 Image(systemName: "square.and.arrow.up")
+                                    .frame(maxWidth: .infinity)
                             }
-                            .help("Export to Backup")
+                            .buttonStyle(.bordered)
+                            .help("Import volumes from JSON")
 
+                            // Export
+                            Button {
+                                // Manager handles logic & triggers success alert
+                                manager.exportToDownloads()
+                            } label: {
+                                Image(systemName: "square.and.arrow.down")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .help("Export volumes to Downloads")
+
+                            // Reset
                             Button {
                                 withAnimation { showResetConfirmation = true }
                             } label: {
                                 Image(systemName: "trash")
+                                    .frame(maxWidth: .infinity)
                             }
-                            .help("Clear All Volumes")
+                            .buttonStyle(.bordered)
                             .tint(.red)
-                            Spacer()
+                            .help("Clear all volumes")
                         }
-                        .buttonStyle(.bordered).controlSize(.large)
-                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 0)  // No extra padding inside the row
+                        .listRowBackground(Color.clear)  // Remove the white group box
+                        .listRowInsets(EdgeInsets())  // Span closer to edges (optional)
                     }
 
-                    // About Section
-                    Section {
+                    Section(header: Text("Application Info")) {
                         HStack {
                             Spacer()
                             VStack(spacing: 4) {
                                 Image("Logo")
                                     .resizable()
                                     .scaledToFit()
-                                    .frame(width: 32, height: 32)
-                                    .cornerRadius(6)
+                                    .frame(width: 48, height: 48)
+                                    .cornerRadius(10)
 
-                                Text("Mounty \(appVersion)").font(.caption)
-                                    .fontWeight(.medium)
-                                Text("Build \(buildNumber)").font(.caption2)
+                                Text("Mounty \(appVersion)").font(.headline)
+                                Text("Version \(appVersion) (\(buildNumber))")
+                                    .font(.caption)
                                     .foregroundColor(.secondary)
                             }
                             Spacer()
                         }
-                        .padding(.vertical, 8).listRowBackground(Color.clear)
+                        .padding(.vertical, 8)
+                        .listRowBackground(Color.clear)
                     }
                 }
                 .formStyle(.grouped)
                 .scrollContentBackground(.hidden)
                 .scrollDisabled(true)
-                .disabled(showResetConfirmation || showQuitConfirmation)
+                .disabled(
+                    showResetConfirmation || showQuitConfirmation
+                        || showImportDialog || showExportSuccess
+                )
                 .blur(
-                    radius: (showResetConfirmation || showQuitConfirmation)
-                        ? 2 : 0
+                    radius: (showResetConfirmation || showQuitConfirmation
+                        || showImportDialog || showExportSuccess) ? 2 : 0
                 )
             }
 
-            // Custom Reset Alert Overlay
+            // --- OVERLAYS ---
+
             if showResetConfirmation {
                 ConfirmationOverlay(
                     title: "Clear All Volumes?",
-                    message:
-                        "This will remove all configured volumes.\nThis action cannot be undone.",
+                    message: "This action cannot be undone.",
                     confirmButtonText: "Clear",
                     isPresented: $showResetConfirmation
                 ) {
@@ -157,56 +144,51 @@ struct SettingsView: View {
                 }
             }
 
-            // Custom Quit Alert Overlay
             if showQuitConfirmation {
                 ConfirmationOverlay(
                     title: "Quit Mounty?",
-                    message: "Are you sure you want to quit the application?",
+                    message: "Are you sure you want to quit?",
                     confirmButtonText: "Quit",
                     isPresented: $showQuitConfirmation
                 ) {
                     NSApplication.shared.terminate(nil)
                 }
             }
+
+            if showImportDialog {
+                InputOverlay(
+                    title: "Import Volumes",
+                    message: "Enter full path to backup file",
+                    placeholder: "~/Downloads/MountyBackup.json",
+                    inputText: $importPath,
+                    isPresented: $showImportDialog
+                ) {
+                    manager.importVolumes(fromPath: importPath)
+                }
+            }
+
+            // Success Feedback (Linked to Manager State)
+            if manager.showSuccess {
+                AlertOverlay(
+                    title: "Success",
+                    message: manager.successMessage ?? "Operation successful",
+                    isPresented: $manager.showSuccess
+                )
+            }
         }
-        .fileImporter(
-            isPresented: $showFileImporter,
-            allowedContentTypes: [.json]
-        ) { handleImport(result: $0) }
-        .fileExporter(
-            isPresented: $showFileExporter,
-            document: VolumeBackup(volumes: manager.volumes),
-            contentType: .json,
-            defaultFilename: "MountyBackup.json"
-        ) { _ in }
+        // Fallback System Alerts
         .alert(
-            "Import Error",
-            isPresented: $showErrorAlert,
+            "Error",
+            isPresented: $manager.showError,
             actions: {},
-            message: { Text(importError ?? "Unknown error") }
+            message: { Text(manager.lastError ?? "Unknown error") }
         )
         .fixedSize(horizontal: false, vertical: true)
     }
-
-    private func handleImport(result: Result<URL, Error>) {
-        switch result {
-        case .success(let url):
-            do {
-                let data = try Data(contentsOf: url)
-                try manager.importVolumes(from: data)
-            } catch {
-                importError =
-                    "Failed to decode backup file. It may be corrupt. (\(error.localizedDescription))"
-                showErrorAlert = true
-            }
-        case .failure(let error):
-            importError = "Failed to select file: \(error.localizedDescription)"
-            showErrorAlert = true
-        }
-    }
 }
 
-// Reusable confirmation view to avoid duplicate code
+// MARK: - Reusable Overlays
+
 struct ConfirmationOverlay: View {
     let title: String
     let message: String
@@ -220,20 +202,15 @@ struct ConfirmationOverlay: View {
                 .onTapGesture { withAnimation { isPresented = false } }
 
             VStack(spacing: 16) {
-                VStack(spacing: 8) {
-                    Text(title).font(.headline)
-                    Text(message)
-                        .font(.caption).multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
-                }
+                Text(title).font(.headline)
+                Text(message).font(.caption).multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
                 HStack(spacing: 12) {
                     Button("Cancel") { withAnimation { isPresented = false } }
                         .keyboardShortcut(.cancelAction)
-                    Button(confirmButtonText) {
-                        onConfirm()
-                    }
-                    .buttonStyle(.borderedProminent).tint(.red)
-                    .keyboardShortcut(.defaultAction)
+                    Button(confirmButtonText) { onConfirm() }
+                        .buttonStyle(.borderedProminent).tint(.red)
+                        .keyboardShortcut(.defaultAction)
                 }
             }
             .padding(20).background(.regularMaterial).cornerRadius(12).shadow(
@@ -244,22 +221,87 @@ struct ConfirmationOverlay: View {
     }
 }
 
-// Helper for FileExporter
-struct VolumeBackup: FileDocument {
-    static var readableContentTypes: [UTType] { [.json] }
-    var volumes: [Volume]
+struct InputOverlay: View {
+    let title: String
+    let message: String
+    let placeholder: String
+    @Binding var inputText: String
+    @Binding var isPresented: Bool
+    let onConfirm: () -> Void
 
-    init(volumes: [Volume]) { self.volumes = volumes }
+    @FocusState private var isFocused: Bool
 
-    init(configuration: ReadConfiguration) throws {
-        guard let data = configuration.file.regularFileContents else {
-            throw CocoaError(.fileReadCorruptFile)
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.2).ignoresSafeArea()
+                .onTapGesture {
+                    isFocused = false
+                    withAnimation { isPresented = false }
+                }
+
+            VStack(spacing: 16) {
+                Text(title).font(.headline)
+                Text(message).font(.caption).multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
+
+                TextField(placeholder, text: $inputText)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($isFocused)
+
+                HStack(spacing: 12) {
+                    Button("Cancel") {
+                        isFocused = false
+                        withAnimation { isPresented = false }
+                    }
+                    .keyboardShortcut(.cancelAction)
+
+                    Button("Import") {
+                        isFocused = false
+                        withAnimation { isPresented = false }
+                        onConfirm()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(inputText.isEmpty)
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(20).background(.regularMaterial).cornerRadius(12).shadow(
+                radius: 10
+            )
+            .frame(width: 280).transition(.scale.combined(with: .opacity))
         }
-        self.volumes = try JSONDecoder().decode([Volume].self, from: data)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isFocused = true
+            }
+        }
     }
+}
 
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        let data = try JSONEncoder().encode(volumes)
-        return FileWrapper(regularFileWithContents: data)
+struct AlertOverlay: View {
+    let title: String
+    let message: String
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.2).ignoresSafeArea()
+                .onTapGesture { withAnimation { isPresented = false } }
+
+            VStack(spacing: 16) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 32)).foregroundColor(.green)
+                Text(title).font(.headline)
+                Text(message).font(.caption).multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
+
+                Button("OK") { withAnimation { isPresented = false } }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(20).background(.regularMaterial).cornerRadius(12).shadow(
+                radius: 10
+            )
+            .frame(width: 280).transition(.scale.combined(with: .opacity))
+        }
     }
 }

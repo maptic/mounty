@@ -19,58 +19,29 @@ struct MainListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Hidden button to catch keyboard shortcut
             Button("") { withAnimation { manager.showSearch.toggle() } }
                 .keyboardShortcut("f", modifiers: .command)
                 .frame(width: 0, height: 0)
 
-            // --- HEADER ---
-            HStack(spacing: 8) {
-                // Leading Item: Logo
-                Image("Logo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 28, height: 28)
-                    .cornerRadius(6)
+            HeaderView(
+                title: "Mounty",
+                showLogo: true,
+                trailingAction: { viewMode = .settings },
+                trailingIcon: ("gearshape.fill", .secondary),
+                trailingHelp: "Settings"
+            )
+            .transaction { $0.animation = nil }
 
-                // Title (Left Aligned)
-                Text("Mounty")
-                    // Use .rounded for a modern, friendly, Apple-like feel
-                    .font(.system(.headline, design: .rounded))
-                    .fontWeight(.bold)
-
-                Spacer()
-
-                // Trailing Item: Settings Button
-                Button {
-                    viewMode = .settings
-                } label: {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain).help("Settings")
-                .frame(width: 28)  // Match the width of the logo for balance
-            }
-            .padding(12)  // Consistent padding with other views
-            .transaction { transaction in
-                transaction.animation = nil
-            }
-
-            // --- SEARCH BAR ---
             if isSearchVisible {
                 HStack {
                     TextField("Search...", text: $manager.searchText)
                         .textFieldStyle(.roundedBorder).frame(height: 28)
-
                     Menu {
                         Picker("Sort By", selection: $manager.sortOrder) {
                             ForEach(
                                 VolumeManager.SortOrder.allCases,
                                 id: \.self
-                            ) {
-                                Text($0.rawValue).tag($0)
-                            }
+                            ) { Text($0.rawValue).tag($0) }
                         }
                     } label: {
                         Image(systemName: "arrow.up.arrow.down.circle")
@@ -88,8 +59,9 @@ struct MainListView: View {
                                 ? "arrow.down" : "arrow.up"
                         )
                     }
-                    .buttonStyle(.borderless)
-                    .frame(width: 28, height: 28).help("Toggle Sort Direction")
+                    .buttonStyle(.borderless).frame(width: 28, height: 28).help(
+                        "Toggle Sort Direction"
+                    )
                 }
                 .padding(.horizontal, 12).padding(.bottom, 12)
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -97,19 +69,17 @@ struct MainListView: View {
 
             Divider()
 
-            // --- DYNAMIC LIST ---
             if manager.filteredAndSortedVolumes.isEmpty {
                 VStack {
                     Spacer()
                     Text(
                         manager.volumes.isEmpty
                             ? "No Volumes Configured" : "No Matching Volumes"
-                    )
-                    .foregroundColor(.secondary)
+                    ).foregroundColor(.secondary)
                     Spacer()
                 }.frame(height: listHeight)
             } else {
-                ScrollViewReader { proxy in
+                ScrollViewReader { _ in
                     ScrollView {
                         VStack(spacing: 0) {
                             ForEach(manager.filteredAndSortedVolumes) {
@@ -129,7 +99,6 @@ struct MainListView: View {
 
             Divider()
 
-            // --- FOOTER ---
             HStack {
                 Button {
                     withAnimation { manager.showSearch.toggle() }
@@ -140,9 +109,7 @@ struct MainListView: View {
                         )
                 }
                 .buttonStyle(.plain).help("Search Volumes (⌘F)")
-
                 Spacer()
-
                 Button {
                     viewMode = .add
                 } label: {

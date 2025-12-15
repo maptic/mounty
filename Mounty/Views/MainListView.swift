@@ -26,29 +26,35 @@ struct MainListView: View {
 
             // --- HEADER ---
             HStack {
-                Text("Mounty").font(.headline).fontWeight(.bold)
+                Image("Logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 24, height: 24)
+                    .opacity(0.8)
+                    .cornerRadius(6)
+
                 Spacer()
+
+                Text("Mounty").font(.headline).fontWeight(.bold)
+
+                Spacer()
+
                 Button {
                     viewMode = .settings
                 } label: {
-                    Image(systemName: "gearshape.fill").foregroundColor(
-                        .secondary
-                    )
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain).help("Settings")
+                .frame(width: 24)  // Match the width of the logo for balance
             }
             .padding([.horizontal, .top], 12).padding(.bottom, 8)
-            // *** THE FIX ***
-            // This modifier intercepts the animation transaction and nullifies it
-            // for this specific view and its children. The header will now snap
-            // to its final position instantly, while other views animate.
             .transaction { transaction in
                 transaction.animation = nil
             }
 
             // --- SEARCH BAR ---
-            // The search bar is still added/removed conditionally,
-            // and its animation is governed by the `withAnimation` block below.
             if isSearchVisible {
                 HStack {
                     TextField("Search...", text: $manager.searchText)
@@ -88,7 +94,7 @@ struct MainListView: View {
 
             Divider()
 
-            // List with dynamic height
+            // --- DYNAMIC LIST ---
             if manager.filteredAndSortedVolumes.isEmpty {
                 VStack {
                     Spacer()
@@ -100,16 +106,22 @@ struct MainListView: View {
                     Spacer()
                 }.frame(height: listHeight)
             } else {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(manager.filteredAndSortedVolumes) { volume in
-                            VolumeRow(volume: volume, manager: manager).frame(
-                                height: rowHeight
-                            )
-                            Divider()
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            ForEach(manager.filteredAndSortedVolumes) {
+                                volume in
+                                VolumeRow(volume: volume, manager: manager)
+                                    .frame(height: rowHeight)
+                                Divider()
+                            }
                         }
                     }
-                }.frame(height: listHeight)
+                    .frame(height: listHeight)
+                    .scrollDisabled(
+                        manager.filteredAndSortedVolumes.count <= maxVisibleRows
+                    )
+                }
             }
 
             Divider()
@@ -117,8 +129,6 @@ struct MainListView: View {
             // --- FOOTER ---
             HStack {
                 Button {
-                    // The withAnimation block triggers the animation for the whole view.
-                    // The .transaction modifier on the header opts it out.
                     withAnimation { manager.showSearch.toggle() }
                 } label: {
                     Image(systemName: "magnifyingglass")

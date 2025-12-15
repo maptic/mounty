@@ -5,11 +5,9 @@ struct SettingsView: View {
     @ObservedObject var manager: VolumeManager
     @Binding var viewMode: AppViewMode
 
-    // State for confirmation overlays
     @State private var showResetConfirmation = false
     @State private var showQuitConfirmation = false
 
-    // State for file panel presentation
     @State private var showFileImporter = false
     @State private var showFileExporter = false
     @State private var importError: String?
@@ -26,16 +24,15 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 // Header - With Centered Title and Quit Button
                 HStack {
-                    // Leading Item
+                    // Leading Item: Back button without text for balance
                     Button {
                         withAnimation { viewMode = .list }
                     } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                            Text("Back")
-                        }
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .semibold))
                     }
                     .buttonStyle(.plain).foregroundColor(.accentColor)
+                    .frame(width: 24, alignment: .leading)
 
                     Spacer()
 
@@ -44,7 +41,7 @@ struct SettingsView: View {
 
                     Spacer()
 
-                    // Trailing Item
+                    // Trailing Item: Quit button
                     Button {
                         withAnimation { showQuitConfirmation = true }
                     } label: {
@@ -54,6 +51,7 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Quit Mounty")
+                    .frame(width: 24, alignment: .trailing)
                 }
                 .padding(12).background(.regularMaterial)
 
@@ -114,17 +112,17 @@ struct SettingsView: View {
                         .frame(maxWidth: .infinity)
                     }
 
+                    // About Section with App Icon
                     Section {
                         HStack {
                             Spacer()
                             VStack(spacing: 4) {
-                                Image(
-                                    systemName:
-                                        "externaldrive.connected.to.line.below"
-                                )
-                                .font(.system(size: 24)).foregroundColor(
-                                    .secondary
-                                )
+                                Image("Logo")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 32, height: 32)
+                                    .cornerRadius(6)
+
                                 Text("Mounty \(appVersion)").font(.caption)
                                     .fontWeight(.medium)
                                 Text("Build \(buildNumber)").font(.caption2)

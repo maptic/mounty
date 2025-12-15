@@ -19,26 +19,28 @@ struct MainListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Hidden button to catch keyboard shortcut
+            // Hidden button for keyboard shortcut
             Button("") { withAnimation { manager.showSearch.toggle() } }
                 .keyboardShortcut("f", modifiers: .command)
                 .frame(width: 0, height: 0)
 
             // --- HEADER ---
             HStack {
+                // Leading Item: Logo
                 Image("Logo")
                     .resizable()
                     .scaledToFit()
                     .frame(width: 24, height: 24)
-                    .opacity(0.8)
-                    .cornerRadius(6)
+                    .cornerRadius(4)
 
                 Spacer()
 
+                // Center Item: Title
                 Text("Mounty").font(.headline).fontWeight(.bold)
 
                 Spacer()
 
+                // Trailing Item: Settings Button
                 Button {
                     viewMode = .settings
                 } label: {

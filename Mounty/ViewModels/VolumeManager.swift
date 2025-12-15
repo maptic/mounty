@@ -100,45 +100,65 @@ class VolumeManager: ObservableObject {
     // MARK: - Event Pipelines
 
     private func setupPipelines() {
+        // 1. Network Status (Reachability) - High Priority Reaction
         eventMonitor.networkStatus
             .receive(on: RunLoop.main)
             .sink { [weak self] status in
                 guard let self else { return }
+
+                // Update internal state
                 let wasUp = self.isNetworkUp
                 self.isNetworkUp = (status == .satisfied)
+
                 if self.isNetworkUp != wasUp {
                     self.logger.info(
                         "Global Network Changed: \(self.isNetworkUp ? "UP" : "DOWN")"
                     )
-                    Task {
-                        await self.refreshState()
-                        if self.isNetworkUp { await self.runAutomount() }
-                    }
+                }
+
+                // Trigger refresh immediately on ANY status update.
+                // Priority: .userInitiated (High) for responsiveness.
+                Task(priority: .userInitiated) {
+                    await self.refreshState()
+                    if self.isNetworkUp { await self.runAutomount() }
                 }
             }
             .store(in: &cancellables)
 
+        // 2. Interfaces Changed (VPN Toggles) - High Priority Reaction
         eventMonitor.interfacesChanged
             .receive(on: RunLoop.main)
             .sink { [weak self] in
                 self?.logger.info(
                     "Interface topology changed. Retrying connections."
                 )
-                Task {
+                // Priority: .userInitiated (High) to catch VPNs quickly
+                Task(priority: .userInitiated) {
                     await self?.refreshState()
                     await self?.runAutomount()
                 }
             }
             .store(in: &cancellables)
 
+        // 3. File System (Manual Mounts)
         eventMonitor.fileSystemChanged
             .receive(on: RunLoop.main)
-            .sink { [weak self] in Task { await self?.refreshState() } }
+            .sink { [weak self] in
+                Task(priority: .utility) { await self?.refreshState() }
+            }
             .store(in: &cancellables)
 
-        Timer.publish(every: 60, on: .main, in: .common)
+        // 4. Heartbeat Timer (Silent Death Check)
+        // Interval: 5s (Snappy)
+        // Optimization: Gated by Network Status & Lower QoS
+        Timer.publish(every: 5, on: .main, in: .common)
             .autoconnect()
-            .sink { [weak self] _ in Task { await self?.refreshState() } }
+            .sink { [weak self] _ in
+                guard let self = self, self.isNetworkUp else { return }
+                // Priority: .utility (Low/Efficiency).
+                // This allows the OS to use E-Cores, saving battery for routine checks.
+                Task(priority: .utility) { await self.refreshState() }
+            }
             .store(in: &cancellables)
     }
 
@@ -148,6 +168,7 @@ class VolumeManager: ObservableObject {
         guard isNetworkUp else { return }
 
         for volume in volumes where volume.isAutomountEnabled {
+            // Check if not mounted AND not currently processing
             if mountPaths[volume.id] == nil && !busyVolumes.contains(volume.id)
             {
                 busyVolumes.insert(volume.id)
@@ -156,8 +177,10 @@ class VolumeManager: ObservableObject {
                     address: volume.serverAddress
                 )
 
+                // Double-check mountPaths after reachability (async race protection)
                 if isReachable && mountPaths[volume.id] == nil {
                     guard let url = URL(string: volume.serverAddress) else {
+                        busyVolumes.remove(volume.id)
                         continue
                     }
                     logger.info(
@@ -177,6 +200,10 @@ class VolumeManager: ObservableObject {
         let currentVolumes = self.volumes
         let networkAvailable = self.isNetworkUp
 
+        // Run detection.
+        // NOTE: Task inherits priority from the caller.
+        // Events call this with .userInitiated (Fast).
+        // Timer calls this with .utility (Efficient).
         let newPaths = await Task.detached {
             return await VolumeManager.detectMounts(
                 volumes: currentVolumes,
@@ -207,9 +234,13 @@ class VolumeManager: ObservableObject {
                         for: volume,
                         in: systemMounts
                     ) {
+                        // 1. TCP Reachability (Fastest fail for dropped VPNs)
+                        // Note: This only runs for volumes that appear to be mounted.
+                        // It does not waste battery pinging unmounted servers.
                         if await ReachabilityService.isServerReachable(
                             address: volume.serverAddress
                         ) {
+                            // 2. IO Reachability (Catches hung kernel mounts)
                             if ReachabilityService.isMountPointAlive(path: path)
                             {
                                 return (volume.id, path)
@@ -331,7 +362,6 @@ class VolumeManager: ObservableObject {
 
     // MARK: - Import / Export Logic
 
-    // Import from String path
     func importVolumes(fromPath pathString: String) {
         let expandedPath = (pathString as NSString).expandingTildeInPath
         let url = URL(fileURLWithPath: expandedPath)
@@ -354,7 +384,6 @@ class VolumeManager: ObservableObject {
             storage.saveVolumes(volumes)
             Task { await refreshState() }
 
-            // Trigger Success Dialog
             self.successMessage = "Imported \(count) volumes successfully."
             self.showSuccess = true
 
@@ -364,7 +393,6 @@ class VolumeManager: ObservableObject {
         }
     }
 
-    // Export to Downloads
     @discardableResult
     func exportToDownloads() -> Bool {
         do {

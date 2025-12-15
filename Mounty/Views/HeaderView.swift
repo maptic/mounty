@@ -21,14 +21,10 @@ struct HeaderView: View {
                     .buttonStyle(.plain)
                     .foregroundColor(.accentColor)
                 } else if showLogo {
-                    // Falls back to system icon if named asset missing
-                    Image(
-                        nsImage: NSImage(named: NSImage.applicationIconName)
-                            ?? NSImage()
-                    )
-                    .resizable()
-                    .scaledToFit()
-                    .cornerRadius(4)
+                    Image("Logo")
+                        .resizable()
+                        .scaledToFit()
+                        .cornerRadius(4)
                 }
             }
             .frame(width: 28, height: 28, alignment: .leading)

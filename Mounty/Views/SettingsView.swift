@@ -4,8 +4,12 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @ObservedObject var manager: VolumeManager
     @Binding var viewMode: AppViewMode
-    @State private var showResetConfirmation = false
 
+    // State for confirmation overlays
+    @State private var showResetConfirmation = false
+    @State private var showQuitConfirmation = false
+
+    // State for file panel presentation
     @State private var showFileImporter = false
     @State private var showFileExporter = false
     @State private var importError: String?
@@ -20,8 +24,9 @@ struct SettingsView: View {
     var body: some View {
         ZStack {
             VStack(alignment: .leading, spacing: 0) {
-                // Header
+                // Header - With Centered Title and Quit Button
                 HStack {
+                    // Leading Item
                     Button {
                         withAnimation { viewMode = .list }
                     } label: {
@@ -31,10 +36,24 @@ struct SettingsView: View {
                         }
                     }
                     .buttonStyle(.plain).foregroundColor(.accentColor)
+
                     Spacer()
+
+                    // Center Item
                     Text("Settings").font(.headline)
+
                     Spacer()
-                    Text("Back").hidden()
+
+                    // Trailing Item
+                    Button {
+                        withAnimation { showQuitConfirmation = true }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.red)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Quit Mounty")
                 }
                 .padding(12).background(.regularMaterial)
 
@@ -95,16 +114,6 @@ struct SettingsView: View {
                         .frame(maxWidth: .infinity)
                     }
 
-                    Section(header: Text("Application")) {
-                        HStack {
-                            Spacer()
-                            Button("Quit Mounty") {
-                                NSApplication.shared.terminate(nil)
-                            }
-                            Spacer()
-                        }
-                    }
-
                     Section {
                         HStack {
                             Spacer()
@@ -128,46 +137,38 @@ struct SettingsView: View {
                 }
                 .formStyle(.grouped)
                 .scrollContentBackground(.hidden)
-                .scrollDisabled(true)  // Prevent scrolling within the form
-                .disabled(showResetConfirmation)
-                .blur(radius: showResetConfirmation ? 2 : 0)
+                .scrollDisabled(true)
+                .disabled(showResetConfirmation || showQuitConfirmation)
+                .blur(
+                    radius: (showResetConfirmation || showQuitConfirmation)
+                        ? 2 : 0
+                )
             }
 
-            // Custom Alert Overlay
+            // Custom Reset Alert Overlay
             if showResetConfirmation {
-                Color.black.opacity(0.2).ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation { showResetConfirmation = false }
-                    }
-
-                VStack(spacing: 16) {
-                    VStack(spacing: 8) {
-                        Text("Clear All Volumes?").font(.headline)
-                        Text(
-                            "This will remove all configured volumes.\nThis action cannot be undone."
-                        )
-                        .font(.caption).multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
-                    }
-                    HStack(spacing: 12) {
-                        Button("Cancel") {
-                            withAnimation { showResetConfirmation = false }
-                        }
-                        .keyboardShortcut(.cancelAction)
-                        Button("Clear") {
-                            manager.clearAllVolumes()
-                            withAnimation {
-                                showResetConfirmation = false
-                                viewMode = .list
-                            }
-                        }
-                        .buttonStyle(.borderedProminent).tint(.red)
-                        .keyboardShortcut(.defaultAction)
-                    }
+                ConfirmationOverlay(
+                    title: "Clear All Volumes?",
+                    message:
+                        "This will remove all configured volumes.\nThis action cannot be undone.",
+                    confirmButtonText: "Clear",
+                    isPresented: $showResetConfirmation
+                ) {
+                    manager.clearAllVolumes()
+                    withAnimation { viewMode = .list }
                 }
-                .padding(20).background(.regularMaterial).cornerRadius(12)
-                .shadow(radius: 10)
-                .frame(width: 280).transition(.scale.combined(with: .opacity))
+            }
+
+            // Custom Quit Alert Overlay
+            if showQuitConfirmation {
+                ConfirmationOverlay(
+                    title: "Quit Mounty?",
+                    message: "Are you sure you want to quit the application?",
+                    confirmButtonText: "Quit",
+                    isPresented: $showQuitConfirmation
+                ) {
+                    NSApplication.shared.terminate(nil)
+                }
             }
         }
         .fileImporter(
@@ -186,7 +187,6 @@ struct SettingsView: View {
             actions: {},
             message: { Text(importError ?? "Unknown error") }
         )
-        // FIX: Forces the view to take up its ideal height, preventing truncation.
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -208,7 +208,45 @@ struct SettingsView: View {
     }
 }
 
-// Helper for FileExporter (unchanged)
+// Reusable confirmation view to avoid duplicate code
+struct ConfirmationOverlay: View {
+    let title: String
+    let message: String
+    let confirmButtonText: String
+    @Binding var isPresented: Bool
+    let onConfirm: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.2).ignoresSafeArea()
+                .onTapGesture { withAnimation { isPresented = false } }
+
+            VStack(spacing: 16) {
+                VStack(spacing: 8) {
+                    Text(title).font(.headline)
+                    Text(message)
+                        .font(.caption).multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                }
+                HStack(spacing: 12) {
+                    Button("Cancel") { withAnimation { isPresented = false } }
+                        .keyboardShortcut(.cancelAction)
+                    Button(confirmButtonText) {
+                        onConfirm()
+                    }
+                    .buttonStyle(.borderedProminent).tint(.red)
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(20).background(.regularMaterial).cornerRadius(12).shadow(
+                radius: 10
+            )
+            .frame(width: 280).transition(.scale.combined(with: .opacity))
+        }
+    }
+}
+
+// Helper for FileExporter
 struct VolumeBackup: FileDocument {
     static var readableContentTypes: [UTType] { [.json] }
     var volumes: [Volume]

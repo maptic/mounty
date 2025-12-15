@@ -24,7 +24,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 // Header - With Centered Title and Quit Button
                 HStack {
-                    // Leading Item: Back button without text for balance
+                    // Leading Item: Back button (Icon only)
                     Button {
                         withAnimation { viewMode = .list }
                     } label: {
@@ -112,7 +112,7 @@ struct SettingsView: View {
                         .frame(maxWidth: .infinity)
                     }
 
-                    // About Section with App Icon
+                    // About Section
                     Section {
                         HStack {
                             Spacer()

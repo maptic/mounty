@@ -37,10 +37,10 @@ struct SystemMountService {
 
     /// Resolves local mount path from Filer configuration.
     nonisolated static func findMountPath(
-        for filer: Filer,
+        for volume: Volume,
         in mounts: [MountPoint]
     ) -> String? {
-        guard let configUrl = URL(string: filer.serverAddress) else {
+        guard let configUrl = URL(string: volume.serverAddress) else {
             return nil
         }
         let configPath = configUrl.path.lowercased()

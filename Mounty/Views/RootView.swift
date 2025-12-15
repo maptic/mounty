@@ -11,10 +11,13 @@ struct RootView: View {
             switch viewMode {
             case .list:
                 MainListView(manager: manager, viewMode: $viewMode)
+                    .transition(.move(edge: .leading))
             case .add:
                 AddVolumeView(manager: manager, viewMode: $viewMode)
+                    .transition(.move(edge: .trailing))
             case .settings:
                 SettingsView(manager: manager, viewMode: $viewMode)
+                    .transition(.move(edge: .trailing))
             }
         }
         .animation(.default, value: viewMode)

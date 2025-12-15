@@ -1,9 +1,10 @@
 import Combine
 import Network
 import SwiftUI
+import UniformTypeIdentifiers
 import os
 
-/// ViewModel: Orchestrates detection logic, automounting, and state management.
+/// ViewModel: Orchestrates detection logic, automounting, state management, and data persistence.
 @MainActor
 class VolumeManager: ObservableObject {
 
@@ -12,17 +13,22 @@ class VolumeManager: ObservableObject {
     @Published var mountPaths: [UUID: String] = [:]
     @Published var busyVolumes: Set<UUID> = []
 
+    // UI Controls
     @Published var searchText = ""
     @Published var sortOrder: SortOrder = .name
     @Published var sortDirection: SortDirection = .ascending
     @Published var showSearch = false
 
+    // Preferences
     @Published var launchAtLogin: Bool = MountService.isLoginItemEnabled()
     @Published var preferredTerminal: String
     @Published var availableTerminals: [(name: String, id: String)] = []
 
+    // Feedback & Errors
     @Published var lastError: String? = nil
     @Published var showError: Bool = false
+    @Published var successMessage: String? = nil
+    @Published var showSuccess: Bool = false
 
     private var isNetworkUp: Bool = true
 
@@ -31,7 +37,7 @@ class VolumeManager: ObservableObject {
     private let eventMonitor = EventMonitorService()
     private var cancellables = Set<AnyCancellable>()
 
-    // Logger is an instance property, safely isolated by @MainActor.
+    // Logger
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "Mounty",
         category: "Manager"
@@ -94,7 +100,6 @@ class VolumeManager: ObservableObject {
     // MARK: - Event Pipelines
 
     private func setupPipelines() {
-        // 1. Global Network Gate
         eventMonitor.networkStatus
             .receive(on: RunLoop.main)
             .sink { [weak self] status in
@@ -113,11 +118,9 @@ class VolumeManager: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // 2. Interface Changes (VPN Toggle)
         eventMonitor.interfacesChanged
             .receive(on: RunLoop.main)
             .sink { [weak self] in
-                // Using 'self?' ensures safe access inside the closure
                 self?.logger.info(
                     "Interface topology changed. Retrying connections."
                 )
@@ -128,13 +131,11 @@ class VolumeManager: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // 3. FileSystem Changes
         eventMonitor.fileSystemChanged
             .receive(on: RunLoop.main)
             .sink { [weak self] in Task { await self?.refreshState() } }
             .store(in: &cancellables)
 
-        // 4. Heartbeat (less frequent now)
         Timer.publish(every: 60, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in Task { await self?.refreshState() } }
@@ -150,9 +151,11 @@ class VolumeManager: ObservableObject {
             if mountPaths[volume.id] == nil && !busyVolumes.contains(volume.id)
             {
                 busyVolumes.insert(volume.id)
+
                 let isReachable = await ReachabilityService.isServerReachable(
                     address: volume.serverAddress
                 )
+
                 if isReachable && mountPaths[volume.id] == nil {
                     guard let url = URL(string: volume.serverAddress) else {
                         continue
@@ -160,6 +163,7 @@ class VolumeManager: ObservableObject {
                     logger.info(
                         "Automounting volume: \(volume.name, privacy: .public)"
                     )
+
                     if let path = await MountService.mount(url: url) {
                         self.mountPaths[volume.id] = path
                     }
@@ -181,7 +185,9 @@ class VolumeManager: ObservableObject {
         }.value
 
         if self.mountPaths != newPaths {
-            withAnimation(.easeInOut) { self.mountPaths = newPaths }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                self.mountPaths = newPaths
+            }
         }
     }
 
@@ -243,7 +249,8 @@ class VolumeManager: ObservableObject {
                     "Manually mounted volume: \(volume.name, privacy: .public)"
                 )
             } else {
-                self.lastError = "Connection failed."
+                self.lastError =
+                    "Connection failed. Verify address and keychain credentials."
                 self.showError = true
             }
             self.busyVolumes.remove(volume.id)
@@ -297,21 +304,6 @@ class VolumeManager: ObservableObject {
         Task { await refreshState() }
     }
 
-    func importVolumes(from data: Data) throws {
-        let importedVolumes = try JSONDecoder().decode(
-            [Volume].self,
-            from: data
-        )
-        for volume in importedVolumes {
-            if !volumes.contains(where: {
-                $0.serverAddress == volume.serverAddress
-            }) {
-                volumes.append(volume)
-            }
-        }
-        storage.saveVolumes(volumes)
-    }
-
     func toggleAutomount(_ id: UUID) {
         if let idx = volumes.firstIndex(where: { $0.id == id }) {
             volumes[idx].isAutomountEnabled.toggle()
@@ -335,5 +327,67 @@ class VolumeManager: ObservableObject {
     func setPreferredTerminal(_ bundleID: String) {
         preferredTerminal = bundleID
         storage.saveTerminalBundleID(bundleID)
+    }
+
+    // MARK: - Import / Export Logic
+
+    // Import from String path
+    func importVolumes(fromPath pathString: String) {
+        let expandedPath = (pathString as NSString).expandingTildeInPath
+        let url = URL(fileURLWithPath: expandedPath)
+
+        do {
+            let data = try Data(contentsOf: url)
+            let importedVolumes = try JSONDecoder().decode(
+                [Volume].self,
+                from: data
+            )
+            var count = 0
+            for volume in importedVolumes {
+                if !volumes.contains(where: {
+                    $0.serverAddress == volume.serverAddress
+                }) {
+                    volumes.append(volume)
+                    count += 1
+                }
+            }
+            storage.saveVolumes(volumes)
+            Task { await refreshState() }
+
+            // Trigger Success Dialog
+            self.successMessage = "Imported \(count) volumes successfully."
+            self.showSuccess = true
+
+        } catch {
+            lastError = "Could not import: \(error.localizedDescription)"
+            showError = true
+        }
+    }
+
+    // Export to Downloads
+    @discardableResult
+    func exportToDownloads() -> Bool {
+        do {
+            let downloadsURL = try FileManager.default.url(
+                for: .downloadsDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: false
+            )
+            let fileURL = downloadsURL.appendingPathComponent(
+                "MountyBackup.json"
+            )
+
+            let data = try JSONEncoder().encode(volumes)
+            try data.write(to: fileURL)
+
+            successMessage = "Backup saved to Downloads."
+            showSuccess = true
+            return true
+        } catch {
+            lastError = "Export failed: \(error.localizedDescription)"
+            showError = true
+            return false
+        }
     }
 }

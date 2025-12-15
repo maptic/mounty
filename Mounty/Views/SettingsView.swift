@@ -4,13 +4,12 @@ struct SettingsView: View {
     @ObservedObject var manager: VolumeManager
     @Binding var viewMode: AppViewMode
 
-    // Controls for Overlays
+    // Overlay State
     @State private var showResetConfirmation = false
     @State private var showQuitConfirmation = false
     @State private var showImportDialog = false
-    @State private var showExportSuccess = false
 
-    // Input for Import
+    // Import Logic
     @State private var importPath = ""
 
     let appVersion =
@@ -21,8 +20,8 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack {
+            // Main Settings Content
             VStack(alignment: .leading, spacing: 0) {
-                // Header
                 HeaderView(
                     title: "Settings",
                     backAction: { withAnimation { viewMode = .list } },
@@ -35,7 +34,6 @@ struct SettingsView: View {
 
                 Divider()
 
-                // Settings Form
                 Form {
                     Section(header: Text("General")) {
                         Toggle("Launch at Login", isOn: $manager.launchAtLogin)
@@ -58,7 +56,6 @@ struct SettingsView: View {
 
                     Section(header: Text("Volumes")) {
                         HStack(spacing: 12) {
-                            // Import
                             Button {
                                 importPath = ""
                                 withAnimation { showImportDialog = true }
@@ -69,9 +66,7 @@ struct SettingsView: View {
                             .buttonStyle(.bordered)
                             .help("Import volumes from JSON")
 
-                            // Export
                             Button {
-                                // Manager handles logic & triggers success alert
                                 manager.exportToDownloads()
                             } label: {
                                 Image(systemName: "square.and.arrow.down")
@@ -80,7 +75,6 @@ struct SettingsView: View {
                             .buttonStyle(.bordered)
                             .help("Export volumes to Downloads")
 
-                            // Reset
                             Button {
                                 withAnimation { showResetConfirmation = true }
                             } label: {
@@ -91,20 +85,22 @@ struct SettingsView: View {
                             .tint(.red)
                             .help("Clear all volumes")
                         }
-                        .padding(.horizontal, 0)  // No extra padding inside the row
-                        .listRowBackground(Color.clear)  // Remove the white group box
-                        .listRowInsets(EdgeInsets())  // Span closer to edges (optional)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
                     }
 
                     Section(header: Text("Application Info")) {
                         HStack {
                             Spacer()
                             VStack(spacing: 4) {
-                                Image("Logo")
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 48, height: 48)
-                                    .cornerRadius(10)
+                                Image(
+                                    nsImage: NSImage(
+                                        named: NSImage.applicationIconName
+                                    ) ?? NSImage()
+                                )
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 48, height: 48)
 
                                 Text("Mounty \(appVersion)").font(.headline)
                                 Text("Version \(appVersion) (\(buildNumber))")
@@ -122,15 +118,17 @@ struct SettingsView: View {
                 .scrollDisabled(true)
                 .disabled(
                     showResetConfirmation || showQuitConfirmation
-                        || showImportDialog || showExportSuccess
+                        || showImportDialog || manager.showSuccess
+                        || manager.showError
                 )
                 .blur(
                     radius: (showResetConfirmation || showQuitConfirmation
-                        || showImportDialog || showExportSuccess) ? 2 : 0
+                        || showImportDialog || manager.showSuccess
+                        || manager.showError) ? 2 : 0
                 )
             }
 
-            // --- OVERLAYS ---
+            // Overlays Layer
 
             if showResetConfirmation {
                 ConfirmationOverlay(
@@ -167,141 +165,25 @@ struct SettingsView: View {
                 }
             }
 
-            // Success Feedback (Linked to Manager State)
+            // ViewModel Feedback Overlays
             if manager.showSuccess {
                 AlertOverlay(
                     title: "Success",
                     message: manager.successMessage ?? "Operation successful",
-                    isPresented: $manager.showSuccess
+                    isPresented: $manager.showSuccess,
+                    isError: false
+                )
+            }
+
+            if manager.showError {
+                AlertOverlay(
+                    title: "Error",
+                    message: manager.lastError ?? "Unknown error",
+                    isPresented: $manager.showError,
+                    isError: true
                 )
             }
         }
-        // Fallback System Alerts
-        .alert(
-            "Error",
-            isPresented: $manager.showError,
-            actions: {},
-            message: { Text(manager.lastError ?? "Unknown error") }
-        )
         .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-// MARK: - Reusable Overlays
-
-struct ConfirmationOverlay: View {
-    let title: String
-    let message: String
-    let confirmButtonText: String
-    @Binding var isPresented: Bool
-    let onConfirm: () -> Void
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.2).ignoresSafeArea()
-                .onTapGesture { withAnimation { isPresented = false } }
-
-            VStack(spacing: 16) {
-                Text(title).font(.headline)
-                Text(message).font(.caption).multilineTextAlignment(.center)
-                    .foregroundColor(.secondary)
-                HStack(spacing: 12) {
-                    Button("Cancel") { withAnimation { isPresented = false } }
-                        .keyboardShortcut(.cancelAction)
-                    Button(confirmButtonText) { onConfirm() }
-                        .buttonStyle(.borderedProminent).tint(.red)
-                        .keyboardShortcut(.defaultAction)
-                }
-            }
-            .padding(20).background(.regularMaterial).cornerRadius(12).shadow(
-                radius: 10
-            )
-            .frame(width: 280).transition(.scale.combined(with: .opacity))
-        }
-    }
-}
-
-struct InputOverlay: View {
-    let title: String
-    let message: String
-    let placeholder: String
-    @Binding var inputText: String
-    @Binding var isPresented: Bool
-    let onConfirm: () -> Void
-
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.2).ignoresSafeArea()
-                .onTapGesture {
-                    isFocused = false
-                    withAnimation { isPresented = false }
-                }
-
-            VStack(spacing: 16) {
-                Text(title).font(.headline)
-                Text(message).font(.caption).multilineTextAlignment(.center)
-                    .foregroundColor(.secondary)
-
-                TextField(placeholder, text: $inputText)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($isFocused)
-
-                HStack(spacing: 12) {
-                    Button("Cancel") {
-                        isFocused = false
-                        withAnimation { isPresented = false }
-                    }
-                    .keyboardShortcut(.cancelAction)
-
-                    Button("Import") {
-                        isFocused = false
-                        withAnimation { isPresented = false }
-                        onConfirm()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(inputText.isEmpty)
-                    .keyboardShortcut(.defaultAction)
-                }
-            }
-            .padding(20).background(.regularMaterial).cornerRadius(12).shadow(
-                radius: 10
-            )
-            .frame(width: 280).transition(.scale.combined(with: .opacity))
-        }
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                isFocused = true
-            }
-        }
-    }
-}
-
-struct AlertOverlay: View {
-    let title: String
-    let message: String
-    @Binding var isPresented: Bool
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.2).ignoresSafeArea()
-                .onTapGesture { withAnimation { isPresented = false } }
-
-            VStack(spacing: 16) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 32)).foregroundColor(.green)
-                Text(title).font(.headline)
-                Text(message).font(.caption).multilineTextAlignment(.center)
-                    .foregroundColor(.secondary)
-
-                Button("OK") { withAnimation { isPresented = false } }
-                    .keyboardShortcut(.defaultAction)
-            }
-            .padding(20).background(.regularMaterial).cornerRadius(12).shadow(
-                radius: 10
-            )
-            .frame(width: 280).transition(.scale.combined(with: .opacity))
-        }
     }
 }

@@ -1,9 +1,16 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var manager: FilerManager
+    @ObservedObject var manager: VolumeManager
     @Binding var viewMode: AppViewMode
+
+    // Overlay State
     @State private var showResetConfirmation = false
+    @State private var showQuitConfirmation = false
+    @State private var showImportDialog = false
+
+    // Import Logic
+    @State private var importPath = ""
 
     let appVersion =
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
@@ -13,121 +20,170 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack {
+            // Main Settings Content
             VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Button {
-                        withAnimation { viewMode = .list }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                            Text("Back")
-                        }
-                    }
-                    .buttonStyle(.plain).foregroundColor(.accentColor)
-                    Spacer()
-                    Text("Settings").font(.headline)
-                    Spacer()
-                    Text("Back").hidden()
-                }
-                .padding(12).background(.regularMaterial)
+                HeaderView(
+                    title: "Settings",
+                    backAction: { withAnimation { viewMode = .list } },
+                    trailingAction: {
+                        withAnimation { showQuitConfirmation = true }
+                    },
+                    trailingIcon: ("xmark.circle.fill", .red),
+                    trailingHelp: "Quit Mounty"
+                )
 
                 Divider()
 
                 Form {
                     Section(header: Text("General")) {
-                        Toggle(
-                            "Launch at Login",
-                            isOn: Binding(
-                                get: { manager.launchAtLogin },
-                                set: { manager.toggleLaunchAtLogin($0) }
-                            )
-                        ).toggleStyle(.switch)
+                        Toggle("Launch at Login", isOn: $manager.launchAtLogin)
+                            .onChange(of: manager.launchAtLogin) { _, v in
+                                manager.toggleLaunchAtLogin(v)
+                            }
 
                         Picker(
                             "Terminal App",
-                            selection: Binding(
-                                get: { manager.preferredTerminal },
-                                set: { manager.setPreferredTerminal($0) }
-                            )
+                            selection: $manager.preferredTerminal
                         ) {
                             ForEach(manager.availableTerminals, id: \.id) {
                                 Text($0.name).tag($0.id)
                             }
-                        }.pickerStyle(.menu)
+                        }
+                        .onChange(of: manager.preferredTerminal) { _, v in
+                            manager.setPreferredTerminal(v)
+                        }
                     }
 
-                    Section(header: Text("Data")) {
-                        Button("Reset App Data") {
-                            withAnimation(
-                                .spring(response: 0.3, dampingFraction: 0.7)
-                            ) {
-                                showResetConfirmation = true
+                    Section(header: Text("Volumes")) {
+                        HStack(spacing: 12) {
+                            Button {
+                                importPath = ""
+                                withAnimation { showImportDialog = true }
+                            } label: {
+                                Image(systemName: "square.and.arrow.up")
+                                    .frame(maxWidth: .infinity)
                             }
-                        }.foregroundColor(.red)
+                            .buttonStyle(.bordered)
+                            .help("Import volumes from JSON")
+
+                            Button {
+                                manager.exportToDownloads()
+                            } label: {
+                                Image(systemName: "square.and.arrow.down")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .help("Export volumes to Downloads")
+
+                            Button {
+                                withAnimation { showResetConfirmation = true }
+                            } label: {
+                                Image(systemName: "trash")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.red)
+                            .help("Clear all volumes")
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
                     }
 
-                    Section {
+                    Section(header: Text("Application Info")) {
                         HStack {
                             Spacer()
                             VStack(spacing: 4) {
                                 Image(
-                                    systemName:
-                                        "externaldrive.connected.to.line.below"
+                                    nsImage: NSImage(
+                                        named: NSImage.applicationIconName
+                                    ) ?? NSImage()
                                 )
-                                .font(.system(size: 24)).foregroundColor(
-                                    .secondary
-                                )
-                                Text("Mounty \(appVersion)").font(.caption)
-                                    .fontWeight(.medium)
-                                Text("Build \(buildNumber)").font(.caption2)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 48, height: 48)
+
+                                Text("Mounty \(appVersion)").font(.headline)
+                                Text("Version \(appVersion) (\(buildNumber))")
+                                    .font(.caption)
                                     .foregroundColor(.secondary)
                             }
                             Spacer()
                         }
-                        .padding(.vertical, 8).listRowBackground(Color.clear)
+                        .padding(.vertical, 8)
+                        .listRowBackground(Color.clear)
                     }
                 }
-                .formStyle(.grouped).scrollContentBackground(.hidden)
-                .disabled(showResetConfirmation).blur(
-                    radius: showResetConfirmation ? 2 : 0
+                .formStyle(.grouped)
+                .scrollContentBackground(.hidden)
+                .scrollDisabled(true)
+                .disabled(
+                    showResetConfirmation || showQuitConfirmation
+                        || showImportDialog || manager.showSuccess
+                        || manager.showError
+                )
+                .blur(
+                    radius: (showResetConfirmation || showQuitConfirmation
+                        || showImportDialog || manager.showSuccess
+                        || manager.showError) ? 2 : 0
                 )
             }
 
-            if showResetConfirmation {
-                Color.black.opacity(0.2).ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation { showResetConfirmation = false }
-                    }
+            // Overlays Layer
 
-                VStack(spacing: 16) {
-                    VStack(spacing: 8) {
-                        Text("Reset App Data?").font(.headline)
-                        Text(
-                            "This will remove all configured filers.\nThis action cannot be undone."
-                        )
-                        .font(.caption).multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
-                    }
-                    HStack(spacing: 12) {
-                        Button("Cancel") {
-                            withAnimation { showResetConfirmation = false }
-                        }
-                        .keyboardShortcut(.cancelAction)
-                        Button("Reset") {
-                            manager.removeAllFilers()
-                            withAnimation {
-                                showResetConfirmation = false
-                                viewMode = .list
-                            }
-                        }
-                        .buttonStyle(.borderedProminent).tint(.red)
-                        .keyboardShortcut(.defaultAction)
-                    }
+            if showResetConfirmation {
+                ConfirmationOverlay(
+                    title: "Clear All Volumes?",
+                    message: "This action cannot be undone.",
+                    confirmButtonText: "Clear",
+                    isPresented: $showResetConfirmation
+                ) {
+                    manager.clearAllVolumes()
+                    withAnimation { viewMode = .list }
                 }
-                .padding(20).background(.regularMaterial).cornerRadius(12)
-                .shadow(radius: 10)
-                .frame(width: 280).transition(.scale.combined(with: .opacity))
+            }
+
+            if showQuitConfirmation {
+                ConfirmationOverlay(
+                    title: "Quit Mounty?",
+                    message: "Are you sure you want to quit?",
+                    confirmButtonText: "Quit",
+                    isPresented: $showQuitConfirmation
+                ) {
+                    NSApplication.shared.terminate(nil)
+                }
+            }
+
+            if showImportDialog {
+                InputOverlay(
+                    title: "Import Volumes",
+                    message: "Enter full path to backup file",
+                    placeholder: "~/Downloads/MountyBackup.json",
+                    inputText: $importPath,
+                    isPresented: $showImportDialog
+                ) {
+                    manager.importVolumes(fromPath: importPath)
+                }
+            }
+
+            // ViewModel Feedback Overlays
+            if manager.showSuccess {
+                AlertOverlay(
+                    title: "Success",
+                    message: manager.successMessage ?? "Operation successful",
+                    isPresented: $manager.showSuccess,
+                    isError: false
+                )
+            }
+
+            if manager.showError {
+                AlertOverlay(
+                    title: "Error",
+                    message: manager.lastError ?? "Unknown error",
+                    isPresented: $manager.showError,
+                    isError: true
+                )
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }

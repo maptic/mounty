@@ -1,15 +1,17 @@
 {
   "images" : [
     {
-      "filename" : "logo.png",
+      "filename" : "MenuIcon_1x.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
+      "filename" : "MenuIcon_2x.png",
       "idiom" : "universal",
       "scale" : "2x"
     },
     {
+      "filename" : "MenuIcon_3x.png",
       "idiom" : "universal",
       "scale" : "3x"
     }
@@ -19,6 +21,6 @@
     "version" : 1
   },
   "properties" : {
-    "preserves-vector-representation" : true
+    "template-rendering-intent" : "template"
   }
 }

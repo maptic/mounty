@@ -16,12 +16,12 @@ struct HeaderView: View {
                 if let backAction = backAction {
                     Button(action: backAction) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.accentColor)
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.accentColor)
+                    .iconButtonHover()
                 } else if showLogo {
-                    // Transparent Asset "Logo"
                     Image("Logo")
                         .resizable()
                         .scaledToFit()
@@ -45,10 +45,11 @@ struct HeaderView: View {
                 if let action = trailingAction, let icon = trailingIcon {
                     Button(action: action) {
                         Image(systemName: icon.0)
-                            .font(.system(size: 16))
+                            .font(.system(size: 15))
                             .foregroundColor(icon.1)
                     }
                     .buttonStyle(.plain)
+                    .iconButtonHover()
                     .help(trailingHelp)
                 }
             }

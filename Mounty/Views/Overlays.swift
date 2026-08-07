@@ -1,5 +1,29 @@
 import SwiftUI
 
+// MARK: - Icon Button Hover Modifier
+struct IconButtonHover: ViewModifier {
+    @State private var isHovered = false
+    var cornerRadius: CGFloat = 5
+    var padding: CGFloat = 4
+
+    func body(content: Content) -> some View {
+        content
+            .padding(padding)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+                    .animation(.easeOut(duration: 0.12), value: isHovered)
+            )
+            .onHover { isHovered = $0 }
+    }
+}
+
+extension View {
+    func iconButtonHover(cornerRadius: CGFloat = 5, padding: CGFloat = 4) -> some View {
+        modifier(IconButtonHover(cornerRadius: cornerRadius, padding: padding))
+    }
+}
+
 // MARK: - Status Alert Overlay
 /// Displays success (Green) or error (Red) messages non-intrusively.
 struct AlertOverlay: View {
@@ -36,7 +60,7 @@ struct AlertOverlay: View {
             .padding(20)
             .frame(width: 280)
             .background(.regularMaterial)
-            .cornerRadius(12)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
             .shadow(radius: 10)
             .transition(.scale.combined(with: .opacity))
         }
@@ -78,7 +102,7 @@ struct ConfirmationOverlay: View {
             .padding(20)
             .frame(width: 280)
             .background(.regularMaterial)
-            .cornerRadius(12)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
             .shadow(radius: 10)
             .transition(.scale.combined(with: .opacity))
         }
@@ -135,7 +159,7 @@ struct InputOverlay: View {
             .padding(20)
             .frame(width: 280)
             .background(.regularMaterial)
-            .cornerRadius(12)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
             .shadow(radius: 10)
             .transition(.scale.combined(with: .opacity))
         }

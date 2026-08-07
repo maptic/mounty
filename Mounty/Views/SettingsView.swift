@@ -102,7 +102,7 @@ struct SettingsView: View {
                                 .scaledToFit()
                                 .frame(width: 48, height: 48)
 
-                                Text("Mounty \(appVersion)").font(.headline)
+                                Text("Mounty").font(.headline)
                                 Text("Version \(appVersion) (\(buildNumber))")
                                     .font(.caption)
                                     .foregroundColor(.secondary)

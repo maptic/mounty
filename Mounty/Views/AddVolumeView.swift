@@ -68,10 +68,10 @@ struct AddVolumeView: View {
                 }
                 .padding(8)
                 .background(Color(NSColor.textBackgroundColor))
-                .cornerRadius(6)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                 )
             }
             .padding(20)

@@ -88,13 +88,21 @@ struct MainListView: View {
 
                 // List
                 if manager.filteredAndSortedVolumes.isEmpty {
-                    VStack {
+                    VStack(spacing: 8) {
                         Spacer()
+                        Image(
+                            systemName: manager.volumes.isEmpty
+                                ? "externaldrive.badge.plus"
+                                : "magnifyingglass"
+                        )
+                        .font(.system(size: 28))
+                        .foregroundColor(.secondary.opacity(0.5))
                         Text(
                             manager.volumes.isEmpty
                                 ? "No Volumes Configured"
                                 : "No Matching Volumes"
                         )
+                        .font(.callout)
                         .foregroundColor(.secondary)
                         Spacer()
                     }.frame(height: listHeight)
@@ -126,11 +134,13 @@ struct MainListView: View {
                         withAnimation { manager.showSearch.toggle() }
                     } label: {
                         Image(systemName: "magnifyingglass")
+                            .font(.system(size: 13))
                             .foregroundColor(
                                 isSearchVisible ? .accentColor : .secondary
                             )
                     }
                     .buttonStyle(.plain)
+                    .iconButtonHover()
                     .help("Search Volumes (⌘F)")
 
                     Spacer()

@@ -3,6 +3,7 @@ import SwiftUI
 struct VolumeRow: View {
     let volume: Volume
     @ObservedObject var manager: VolumeManager
+    @State private var isRowHovered = false
 
     var isMounted: Bool { manager.mountPaths[volume.id] != nil }
     var isBusy: Bool { manager.busyVolumes.contains(volume.id) }
@@ -12,10 +13,11 @@ struct VolumeRow: View {
         HStack(spacing: 12) {
             // Icon
             Image(systemName: "server.rack")
-                .font(.system(size: 24))
+                .font(.system(size: 22))
                 .foregroundColor(
-                    isMounted ? .accentColor : .secondary.opacity(0.5)
+                    isMounted ? .accentColor : .secondary.opacity(0.4)
                 )
+                .frame(width: 26)
                 .help(
                     isMounted
                         ? "Mounted at: \(currentPath)"
@@ -27,7 +29,7 @@ struct VolumeRow: View {
                 Text(volume.name)
                     .font(.system(size: 13, weight: .medium))
                 Text(isMounted ? currentPath : volume.serverAddress)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -37,7 +39,7 @@ struct VolumeRow: View {
             Spacer()
 
             // Actions
-            HStack(spacing: 8) {
+            HStack(spacing: 4) {
 
                 // 1. Automount Toggle
                 Button {
@@ -47,13 +49,14 @@ struct VolumeRow: View {
                         systemName: volume.isAutomountEnabled
                             ? "bolt.fill" : "bolt"
                     )
-                    .font(.system(size: 14))
+                    .font(.system(size: 13))
                     .foregroundColor(
                         volume.isAutomountEnabled
-                            ? .orange : .secondary.opacity(0.3)
+                            ? .orange : .secondary.opacity(0.35)
                     )
                 }
                 .buttonStyle(.plain)
+                .iconButtonHover(padding: 3)
                 .help(
                     volume.isAutomountEnabled
                         ? "Disable Automount" : "Enable Automount"
@@ -69,6 +72,7 @@ struct VolumeRow: View {
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .iconButtonHover(padding: 3)
                     .help("Show in Finder")
                 }
 
@@ -82,6 +86,7 @@ struct VolumeRow: View {
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .iconButtonHover(padding: 3)
                     .help("Open in Terminal")
                 }
 
@@ -95,20 +100,26 @@ struct VolumeRow: View {
                 } label: {
                     if isBusy {
                         ProgressView().controlSize(.mini).scaleEffect(0.7)
+                            .frame(width: 20, height: 20)
                     } else {
                         Image(
                             systemName: isMounted ? "network.slash" : "network"
                         )
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundColor(isMounted ? .red : .primary)
                     }
                 }
                 .buttonStyle(.plain)
+                .iconButtonHover(padding: 3)
                 .disabled(isBusy)
                 .help(isMounted ? "Disconnect" : "Connect")
             }
         }
         .padding(.horizontal, 12)
+        .background(isRowHovered ? Color.primary.opacity(0.04) : .clear)
+        .contentShape(Rectangle())
+        .animation(.easeOut(duration: 0.1), value: isRowHovered)
+        .onHover { isRowHovered = $0 }
         .onTapGesture(count: 2) {
             if isMounted { manager.openInFinder(volume) }
         }

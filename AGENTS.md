@@ -81,7 +81,8 @@ Versioning and releases are **fully automated** by `release-please` from commit 
 ### Mandatory model attribution for agent commits
 
 Any commit you create as an AI agent MUST include a `Generated-by:` git trailer naming the exact
-model id, e.g.:
+model id. This is the **only** attribution trailer needed — do **not** add `Co-Authored-By:` or
+any similar trailer. The human user is the author; the model is a tool.
 
 ```
 feat: add reconnect backoff
@@ -90,7 +91,7 @@ Generated-by: claude-opus-4-8
 ```
 
 Use your real model id (`claude-opus-4-8`, `gpt-5`, `gemini-2.5-pro`, …). This is provider-neutral.
-Keep any `Co-Authored-By:` line as well if your harness adds one.
+The `commit-msg` hook validates the format when the trailer is present.
 
 ## Spec-Driven Development (SDD)
 
@@ -118,3 +119,6 @@ Copy the templates into `specs/<NNN-short-name>/` for the feature you are workin
 - Keep changes scoped to the request; don't refactor unrelated code.
 - Never commit secrets, `.p12`, provisioning profiles, or notarization keys.
 - Don't add third-party dependencies without discussion — this app is intentionally dependency-free.
+- **Never include personal contact information** (email addresses, phone numbers, social handles)
+  in any file you create or modify. Use only the GitHub advisory form URL for security reporting.
+  If you need to attribute a maintainer, use their GitHub username, never a private email address.

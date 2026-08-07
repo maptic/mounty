@@ -11,4 +11,6 @@ Highlights:
 - Business logic belongs in Services/ and Models/, never in SwiftUI views.
 - Use the Swift Testing framework; keep tests minimal and focused on real business logic.
 - Agent commits must include a `Generated-by: <model-id>` trailer (e.g. Generated-by: claude-opus-4-8).
+  Do NOT add Co-Authored-By: — the human user is the author.
+- Never include personal contact information (emails, phone numbers) in any file.
 - Do not add third-party dependencies; the app is intentionally dependency-free.

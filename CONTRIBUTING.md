@@ -51,19 +51,18 @@ The `commit-msg` hook validates this format locally, and CI validates the **PR t
 
 ### AI agent attribution (required for agent commits)
 
-If a commit is authored or co-authored by an AI coding agent, it **must** record the model used via
-a `Generated-by:` git trailer. This is provider-neutral — it applies to Claude, GPT, Copilot,
-Gemini, or any other assistant:
+If a commit was produced with the help of an AI coding agent, it **must** record the model used via
+a `Generated-by:` git trailer. This is the **only** attribution trailer needed — do **not** add
+`Co-Authored-By:` or any other trailer. The human is the author; the model is a tool.
 
 ```
 feat: add reconnect backoff
 
 Generated-by: claude-opus-4-8
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 ```
 
 Use the exact model **id** (e.g. `claude-opus-4-8`, `gpt-5`, `gemini-2.5-pro`). The `commit-msg`
-hook warns if a commit looks agent-authored but omits the trailer.
+hook validates the format when the trailer is present.
 
 ## Spec-Driven Development (SDD)
 

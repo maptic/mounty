@@ -169,8 +169,7 @@ class VolumeManager: ObservableObject {
 
         for volume in volumes where volume.isAutomountEnabled {
             // Check if not mounted AND not currently processing
-            if mountPaths[volume.id] == nil && !busyVolumes.contains(volume.id)
-            {
+            if mountPaths[volume.id] == nil && !busyVolumes.contains(volume.id) {
                 busyVolumes.insert(volume.id)
 
                 let isReachable = await ReachabilityService.isServerReachable(
@@ -241,8 +240,7 @@ class VolumeManager: ObservableObject {
                             address: volume.serverAddress
                         ) {
                             // 2. IO Reachability (Catches hung kernel mounts)
-                            if ReachabilityService.isMountPointAlive(path: path)
-                            {
+                            if ReachabilityService.isMountPointAlive(path: path) {
                                 return (volume.id, path)
                             }
                         }

@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# Mounty pre-commit hook: auto-format staged Swift files with swift-format.
+# Install with: ./scripts/install-hooks.sh
+#
+set -eu
+
+# Resolve swift-format (prefer the Xcode toolchain version).
+if command -v swift-format >/dev/null 2>&1; then
+    FORMAT="swift-format"
+elif xcrun --find swift-format >/dev/null 2>&1; then
+    FORMAT="xcrun swift-format"
+else
+    echo "pre-commit: swift-format not found; skipping formatting." >&2
+    exit 0
+fi
+
+# Collect staged Swift files (added/copied/modified).
+staged_swift=$(git diff --cached --name-only --diff-filter=ACM -- '*.swift')
+[ -z "$staged_swift" ] && exit 0
+
+echo "pre-commit: formatting staged Swift files with swift-format…"
+printf '%s\n' "$staged_swift" | while IFS= read -r file; do
+    [ -f "$file" ] || continue
+    $FORMAT format -i "$file"
+    git add "$file"
+done
+
+exit 0

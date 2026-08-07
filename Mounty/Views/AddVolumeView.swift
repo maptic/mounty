@@ -56,8 +56,7 @@ struct AddVolumeView: View {
                         .autocorrectionDisabled(true)
                         .onChange(of: address) { _, newValue in
                             for proto in ProtocolType.allCases {
-                                if newValue.lowercased().hasPrefix(proto.scheme)
-                                {
+                                if newValue.lowercased().hasPrefix(proto.scheme) {
                                     selectedProtocol = proto
                                     address = String(
                                         newValue.dropFirst(proto.scheme.count)

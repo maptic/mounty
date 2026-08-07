@@ -35,30 +35,50 @@ struct ReachabilityService {
                 using: .tcp
             )
 
-            let workItem = DispatchWorkItem { [weak conn] in
-                if conn?.state != .ready {
-                    conn?.cancel()
+            // Thread-safe gate: ensures continuation.resume is called exactly once
+            // even when the timeout and stateUpdateHandler fire concurrently.
+            // @unchecked Sendable is safe here because NSLock guards the mutation.
+            let gate = ResumeGate()
+
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
+                if gate.tryResume() {
+                    conn.cancel()
                     continuation.resume(returning: false)
                 }
             }
 
-            DispatchQueue.global().asyncAfter(
-                deadline: .now() + 2.0,
-                execute: workItem
-            )
-
             conn.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    workItem.cancel()
-                    conn.cancel()
-                    continuation.resume(returning: true)
-                case .failed(_), .cancelled:
-                    workItem.cancel()
+                    if gate.tryResume() {
+                        conn.cancel()
+                        continuation.resume(returning: true)
+                    }
+                case .failed, .cancelled:
+                    if gate.tryResume() {
+                        continuation.resume(returning: false)
+                    }
                 default: break
                 }
             }
             conn.start(queue: .global())
+        }
+    }
+}
+
+/// Single-use boolean flag protected by NSLock; safe to share across @Sendable closures.
+private final class ResumeGate: @unchecked Sendable {
+    private let lock = NSLock()
+    // nonisolated(unsafe): opts out of implicit @MainActor isolation;
+    // thread safety is guaranteed by `lock`.
+    private nonisolated(unsafe) var resumed = false
+
+    /// Returns `true` the first time it is called; `false` on all subsequent calls.
+    nonisolated func tryResume() -> Bool {
+        lock.withLock {
+            guard !resumed else { return false }
+            resumed = true
+            return true
         }
     }
 }

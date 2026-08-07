@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a problem with Mounty
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add a volume smb://...
+        2. Enable automount
+        3. Toggle VPN
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Mounty & macOS version
+      placeholder: "Mounty 1.1.0, macOS 26.1"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: "Console.app logs filtered by subsystem `ch.maptic.Mounty` (or `Mounty`)."
+      render: shell

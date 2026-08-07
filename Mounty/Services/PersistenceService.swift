@@ -4,7 +4,12 @@ import Foundation
 struct PersistenceService {
     private let keyVolumes = "SavedVolumes"
     private let keyTerminal = "PreferredTerminal"
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
+
+    /// - Parameter defaults: injectable store; defaults to `.standard` (override in tests).
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
 
     func saveVolumes(_ volumes: [Volume]) {
         if let encoded = try? JSONEncoder().encode(volumes) {

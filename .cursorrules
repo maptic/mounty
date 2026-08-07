@@ -1,0 +1,14 @@
+# Cursor rules
+
+Agent guidance for this project lives in a single, provider-neutral source of truth.
+
+Read AGENTS.md at the repository root before making changes. It covers architecture,
+build/test/format commands, code style, testing policy, Conventional-Commit + model-attribution
+rules, and the Spec-Driven Development workflow.
+
+Highlights:
+- Conventional Commits are mandatory; PR titles must be valid Conventional Commits.
+- Business logic belongs in Services/ and Models/, never in SwiftUI views.
+- Use the Swift Testing framework; keep tests minimal and focused on real business logic.
+- Agent commits must include a `Generated-by: <model-id>` trailer (e.g. Generated-by: claude-opus-4-8).
+- Do not add third-party dependencies; the app is intentionally dependency-free.

@@ -45,8 +45,7 @@ struct MainListView: View {
                                 .frame(height: 28)
 
                             Menu {
-                                Picker("Sort By", selection: $manager.sortOrder)
-                                {
+                                Picker("Sort By", selection: $manager.sortOrder) {
                                     ForEach(
                                         VolumeManager.SortOrder.allCases,
                                         id: \.self

@@ -1,26 +1,28 @@
+import Darwin
 import Foundation
 import Network
 
 /// Verifies server and mount point responsiveness.
 struct ReachabilityService {
 
-    /// Validates filesystem responsiveness via I/O.
+    /// Validates filesystem responsiveness by calling statfs(2) on the mount path.
+    ///
+    /// statfs() queries kernel-level filesystem metadata without reading file content,
+    /// so it never triggers the macOS TCC "access files on a network volume" prompt.
+    /// It will block (and thus timeout) on a hung/dead mount, which is exactly the
+    /// behaviour we need to detect silently dead kernel mounts.
     nonisolated static func isMountPointAlive(path: String) -> Bool {
         let group = DispatchGroup()
         group.enter()
-        var isAlive = false
+        var alive = false
 
         DispatchQueue.global(qos: .userInteractive).async {
-            if (try? FileManager.default.contentsOfDirectory(atPath: path))
-                != nil
-            {
-                isAlive = true
-            }
+            var buf = statfs()  // zero-init the struct
+            alive = statfs(path, &buf) == 0  // C function: 0 = success
             group.leave()
         }
 
-        let result = group.wait(timeout: .now() + 1.0)
-        return result == .success && isAlive
+        return group.wait(timeout: .now() + 1.0) == .success && alive
     }
 
     /// Validates TCP connectivity to SMB port (445).

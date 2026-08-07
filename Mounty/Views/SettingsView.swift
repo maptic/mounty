@@ -55,27 +55,44 @@ struct SettingsView: View {
                     }
 
                     Section(header: Text("Volumes")) {
-                        Button {
-                            importPath = ""
-                            withAnimation { showImportDialog = true }
-                        } label: {
-                            Label("Import Volumes", systemImage: "square.and.arrow.up")
-                        }
-                        .help("Import volumes from JSON")
+                        HStack(spacing: 12) {
+                            Button {
+                                importPath = ""
+                                withAnimation { showImportDialog = true }
+                            } label: {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.system(size: 15))
+                                    .frame(maxWidth: .infinity, minHeight: 26)
+                            }
+                            .buttonStyle(.plain)
+                            .iconButtonHover(cornerRadius: 6, padding: 6)
+                            .help("Import volumes from JSON")
 
-                        Button {
-                            manager.exportToDownloads()
-                        } label: {
-                            Label("Export to Downloads", systemImage: "square.and.arrow.down")
-                        }
-                        .help("Export volumes to Downloads")
+                            Button {
+                                manager.exportToDownloads()
+                            } label: {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 15))
+                                    .frame(maxWidth: .infinity, minHeight: 26)
+                            }
+                            .buttonStyle(.plain)
+                            .iconButtonHover(cornerRadius: 6, padding: 6)
+                            .help("Export volumes to Downloads")
 
-                        Button(role: .destructive) {
-                            withAnimation { showResetConfirmation = true }
-                        } label: {
-                            Label("Clear All Volumes", systemImage: "trash")
+                            Button {
+                                withAnimation { showResetConfirmation = true }
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 15))
+                                    .foregroundColor(.red)
+                                    .frame(maxWidth: .infinity, minHeight: 26)
+                            }
+                            .buttonStyle(.plain)
+                            .iconButtonHover(cornerRadius: 6, padding: 6)
+                            .help("Clear all volumes")
                         }
-                        .help("Clear all volumes")
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
                     }
 
                     Section(header: Text("Application Info")) {

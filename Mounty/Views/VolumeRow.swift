@@ -57,7 +57,6 @@ struct VolumeRow: View {
                             ? .orange : .secondary.opacity(0.35)
                     )
                 }
-                .buttonStyle(.plain)
                 .iconButtonHover(padding: 3)
                 .help(
                     volume.isAutomountEnabled
@@ -73,7 +72,6 @@ struct VolumeRow: View {
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain)
                     .iconButtonHover(padding: 3)
                     .help("Show in Finder")
                 }
@@ -87,7 +85,6 @@ struct VolumeRow: View {
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain)
                     .iconButtonHover(padding: 3)
                     .help("Open in Terminal")
                 }
@@ -111,7 +108,6 @@ struct VolumeRow: View {
                         .foregroundColor(isMounted ? .red : .primary)
                     }
                 }
-                .buttonStyle(.plain)
                 .iconButtonHover(padding: 3)
                 .disabled(isBusy || isTesting)
                 .help(isTesting ? "Speed test running…" : (isMounted ? "Disconnect" : "Connect"))

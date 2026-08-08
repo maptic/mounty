@@ -56,7 +56,6 @@ struct LogsView: View {
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
-                .buttonStyle(.plain)
                 .iconButtonHover(cornerRadius: 5, padding: 4)
                 .help("Clear all log entries")
 
@@ -72,7 +71,6 @@ struct LogsView: View {
                         .foregroundColor(
                             manager.logEntries.isEmpty ? .secondary.opacity(0.4) : .secondary)
                 }
-                .buttonStyle(.plain)
                 .iconButtonHover(cornerRadius: 5, padding: 4)
                 .disabled(manager.logEntries.isEmpty)
                 .help("Copy all logs to clipboard")

@@ -173,7 +173,6 @@ struct MainListView: View {
                                 isSearchVisible ? .accentColor : .secondary
                             )
                     }
-                    .buttonStyle(.plain)
                     .iconButtonHover()
                     // Keyboard shortcut lives here — removes the need for the
                     // hidden zero-size Button that was causing erratic toggles.

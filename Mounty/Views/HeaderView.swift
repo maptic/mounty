@@ -26,7 +26,6 @@ struct HeaderView: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.accentColor)
                     }
-                    .buttonStyle(.plain)
                     .iconButtonHover()
                 } else if showLogo {
                     Image("Logo")
@@ -55,7 +54,6 @@ struct HeaderView: View {
                             .font(.system(size: 15))
                             .foregroundColor(icon2.1)
                     }
-                    .buttonStyle(.plain)
                     .iconButtonHover()
                     .help(trailingHelp2)
                 }
@@ -65,7 +63,6 @@ struct HeaderView: View {
                             .font(.system(size: 15))
                             .foregroundColor(icon.1)
                     }
-                    .buttonStyle(.plain)
                     .iconButtonHover()
                     .help(trailingHelp)
                 }

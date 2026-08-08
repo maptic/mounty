@@ -1,29 +1,50 @@
 import SwiftUI
 
-// MARK: - Icon Button Hover Modifier
-struct IconButtonHover: ViewModifier {
-    @State private var isHovered = false
+// MARK: - Icon Button Hover Style
+// ButtonStyle is the correct mechanism: padding added inside makeBody becomes
+// part of the button's own rendered frame, so the full padded area is the hit
+// target. The old ViewModifier approach added padding *outside* the Button,
+// leaving the hit area as only the small icon — causing missed clicks.
+struct IconHoverButtonStyle: ButtonStyle {
     var cornerRadius: CGFloat = 5
     var padding: CGFloat = 4
 
-    func body(content: Content) -> some View {
-        content
+    func makeBody(configuration: Configuration) -> some View {
+        IconHoverBody(
+            configuration: configuration,
+            cornerRadius: cornerRadius,
+            padding: padding
+        )
+    }
+}
+
+private struct IconHoverBody: View {
+    let configuration: ButtonStyleConfiguration
+    let cornerRadius: CGFloat
+    let padding: CGFloat
+    @State private var isHovered = false
+
+    var body: some View {
+        configuration.label
             .padding(padding)
-            // contentShape extends the hit-test area to include the padding so
-            // the full visible highlight region is always clickable.
-            .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+                    .fill(
+                        (isHovered || configuration.isPressed)
+                            ? Color.primary.opacity(0.08) : .clear
+                    )
                     .animation(.easeOut(duration: 0.12), value: isHovered)
             )
+            .contentShape(Rectangle())
             .onHover { isHovered = $0 }
     }
 }
 
 extension View {
+    // Callers must NOT also apply .buttonStyle(.plain) — that would take
+    // precedence over this style and revert to a tiny hit area.
     func iconButtonHover(cornerRadius: CGFloat = 5, padding: CGFloat = 4) -> some View {
-        modifier(IconButtonHover(cornerRadius: cornerRadius, padding: padding))
+        buttonStyle(IconHoverButtonStyle(cornerRadius: cornerRadius, padding: padding))
     }
 }
 

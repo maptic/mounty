@@ -30,14 +30,24 @@ class VolumeManager: ObservableObject {
     @Published var successMessage: String? = nil
     @Published var showSuccess: Bool = false
 
+    // In-app log buffer (capped at maxLogEntries)
+    @Published var logEntries: [LogEntry] = []
+
+    // Speed test state
+    @Published var speedTestVolumeId: UUID? = nil
+    @Published var isRunningSpeedTest = false
+    @Published var speedTestResult: SpeedTestService.Result? = nil
+    @Published var speedTestError: String? = nil
+
     private var isNetworkUp: Bool = true
+    private let maxLogEntries = 200
 
     // Dependencies
     private let storage = PersistenceService()
     private let eventMonitor = EventMonitorService()
     private var cancellables = Set<AnyCancellable>()
 
-    // Logger
+    // Logger (os.Logger for Console.app; log() also feeds the in-app ring buffer)
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "Mounty",
         category: "Manager"
@@ -88,6 +98,10 @@ class VolumeManager: ObservableObject {
         return sorted
     }
 
+    var speedTestVolumeName: String {
+        volumes.first { $0.id == speedTestVolumeId }?.name ?? "Volume"
+    }
+
     enum SortOrder: String, CaseIterable {
         case name = "Name"
         case dateAdded = "Date Added"
@@ -95,6 +109,58 @@ class VolumeManager: ObservableObject {
 
     enum SortDirection {
         case ascending, descending
+    }
+
+    // MARK: - Logging
+
+    private func log(_ message: String, level: LogEntry.Level = .info) {
+        switch level {
+        case .info: logger.info("\(message, privacy: .public)")
+        case .warning: logger.warning("\(message, privacy: .public)")
+        case .error: logger.error("\(message, privacy: .public)")
+        }
+        logEntries.append(LogEntry(timestamp: Date(), level: level, message: message))
+        if logEntries.count > maxLogEntries { logEntries.removeFirst() }
+    }
+
+    func clearLogs() {
+        logEntries.removeAll()
+    }
+
+    // MARK: - Speed Test
+
+    func runSpeedTest(for volume: Volume) {
+        guard let path = mountPaths[volume.id] else { return }
+        speedTestVolumeId = volume.id
+        isRunningSpeedTest = true
+        speedTestResult = nil
+        speedTestError = nil
+        log("Speed test started for \(volume.name)")
+
+        Task {
+            do {
+                let result = try await SpeedTestService.measure(at: path)
+                self.speedTestResult = result
+                self.log(
+                    "Speed test (\(volume.name)): "
+                        + "write \(String(format: "%.1f", result.writeSpeed)) MB/s, "
+                        + "read \(String(format: "%.1f", result.readSpeed)) MB/s"
+                )
+            } catch {
+                self.speedTestError = error.localizedDescription
+                self.log(
+                    "Speed test failed for \(volume.name): \(error.localizedDescription)",
+                    level: .error
+                )
+            }
+            self.isRunningSpeedTest = false
+        }
+    }
+
+    func clearSpeedTest() {
+        speedTestVolumeId = nil
+        speedTestResult = nil
+        speedTestError = nil
     }
 
     // MARK: - Event Pipelines
@@ -106,18 +172,13 @@ class VolumeManager: ObservableObject {
             .sink { [weak self] status in
                 guard let self else { return }
 
-                // Update internal state
                 let wasUp = self.isNetworkUp
                 self.isNetworkUp = (status == .satisfied)
 
                 if self.isNetworkUp != wasUp {
-                    self.logger.info(
-                        "Global Network Changed: \(self.isNetworkUp ? "UP" : "DOWN")"
-                    )
+                    self.log("Network: \(self.isNetworkUp ? "UP" : "DOWN")")
                 }
 
-                // Trigger refresh immediately on ANY status update.
-                // Priority: .userInitiated (High) for responsiveness.
                 Task(priority: .userInitiated) {
                     await self.refreshState()
                     if self.isNetworkUp { await self.runAutomount() }
@@ -129,10 +190,7 @@ class VolumeManager: ObservableObject {
         eventMonitor.interfacesChanged
             .receive(on: RunLoop.main)
             .sink { [weak self] in
-                self?.logger.info(
-                    "Interface topology changed. Retrying connections."
-                )
-                // Priority: .userInitiated (High) to catch VPNs quickly
+                self?.log("Network interface changed — retrying connections")
                 Task(priority: .userInitiated) {
                     await self?.refreshState()
                     await self?.runAutomount()
@@ -149,15 +207,11 @@ class VolumeManager: ObservableObject {
             .store(in: &cancellables)
 
         // 4. Heartbeat Timer (Silent Death Check)
-        // Interval: 5s (Snappy)
-        // Optimization: Gated by Network Status & Lower QoS
         // .default mode (not .common) so the timer does not fire during UI event tracking.
         Timer.publish(every: 5, on: .main, in: .default)
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self, self.isNetworkUp else { return }
-                // Priority: .utility (Low/Efficiency).
-                // This allows the OS to use E-Cores, saving battery for routine checks.
                 Task(priority: .utility) { await self.refreshState() }
             }
             .store(in: &cancellables)
@@ -169,7 +223,6 @@ class VolumeManager: ObservableObject {
         guard isNetworkUp else { return }
 
         for volume in volumes where volume.isAutomountEnabled {
-            // Check if not mounted AND not currently processing
             if mountPaths[volume.id] == nil && !busyVolumes.contains(volume.id) {
                 busyVolumes.insert(volume.id)
 
@@ -177,18 +230,18 @@ class VolumeManager: ObservableObject {
                     address: volume.serverAddress
                 )
 
-                // Double-check mountPaths after reachability (async race protection)
                 if isReachable && mountPaths[volume.id] == nil {
                     guard let url = URL(string: volume.serverAddress) else {
                         busyVolumes.remove(volume.id)
                         continue
                     }
-                    logger.info(
-                        "Automounting volume: \(volume.name, privacy: .public)"
-                    )
+                    log("Automounting \(volume.name)")
 
                     if let path = await MountService.mount(url: url) {
                         self.mountPaths[volume.id] = path
+                        log("Automounted \(volume.name) → \(path)")
+                    } else {
+                        log("Automount failed for \(volume.name)", level: .warning)
                     }
                 }
                 busyVolumes.remove(volume.id)
@@ -200,7 +253,6 @@ class VolumeManager: ObservableObject {
         let currentVolumes = self.volumes
         let networkAvailable = self.isNetworkUp
 
-        // Run detection.
         // NOTE: Task inherits priority from the caller.
         // Events call this with .userInitiated (Fast).
         // Timer calls this with .utility (Efficient).
@@ -237,8 +289,6 @@ class VolumeManager: ObservableObject {
                         in: systemMounts
                     ) {
                         // 1. TCP Reachability (Fastest fail for dropped VPNs)
-                        // Note: This only runs for volumes that appear to be mounted.
-                        // It does not waste battery pinging unmounted servers.
                         if await ReachabilityService.isServerReachable(
                             address: volume.serverAddress
                         ) {
@@ -260,30 +310,33 @@ class VolumeManager: ObservableObject {
 
     // MARK: - Actions
 
+    // Runs the 6 NSWorkspace lookups asynchronously so init() returns immediately
+    // and the first UI frame is not blocked by Launch Services queries.
     private func refreshInstalledTerminals() {
-        self.availableTerminals = knownTerminals.filter { (_, bundleID) in
-            NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
-                != nil
-        }
-        if !availableTerminals.contains(where: { $0.id == preferredTerminal }) {
-            preferredTerminal = "com.apple.Terminal"
+        Task(priority: .utility) {
+            self.availableTerminals = self.knownTerminals.filter { (_, bundleID) in
+                NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
+            }
+            if !self.availableTerminals.contains(where: { $0.id == self.preferredTerminal }) {
+                self.preferredTerminal = "com.apple.Terminal"
+            }
         }
     }
 
     func mount(_ volume: Volume) {
         guard let url = URL(string: volume.serverAddress) else { return }
         busyVolumes.insert(volume.id)
+        log("Connecting \(volume.name)…")
 
         Task {
             if let path = await MountService.mount(url: url) {
                 self.mountPaths[volume.id] = path
-                logger.info(
-                    "Manually mounted volume: \(volume.name, privacy: .public)"
-                )
+                self.log("Connected: \(volume.name) → \(path)")
             } else {
                 self.lastError =
                     "Connection failed. Verify address and keychain credentials."
                 self.showError = true
+                self.log("Connection failed: \(volume.name)", level: .error)
             }
             self.busyVolumes.remove(volume.id)
             await self.refreshState()
@@ -296,10 +349,12 @@ class VolumeManager: ObservableObject {
 
         mountPaths.removeValue(forKey: volume.id)
         busyVolumes.insert(volume.id)
+        log("Disconnecting \(volume.name)")
 
         Task {
             await MountService.unmount(path: path)
             self.busyVolumes.remove(volume.id)
+            self.log("Disconnected: \(volume.name)")
             await self.refreshState()
         }
     }
@@ -321,16 +376,21 @@ class VolumeManager: ObservableObject {
     func addVolume(_ volume: Volume) {
         volumes.append(volume)
         storage.saveVolumes(volumes)
+        log("Added volume: \(volume.name)")
         Task { await refreshState() }
     }
 
     func removeVolume(_ id: UUID) {
+        if let v = volumes.first(where: { $0.id == id }) {
+            log("Removed volume: \(v.name)")
+        }
         volumes.removeAll { $0.id == id }
         storage.saveVolumes(volumes)
         Task { await refreshState() }
     }
 
     func clearAllVolumes() {
+        log("Cleared all volumes")
         volumes.removeAll()
         storage.saveVolumes(volumes)
         Task { await refreshState() }
@@ -340,7 +400,9 @@ class VolumeManager: ObservableObject {
         if let idx = volumes.firstIndex(where: { $0.id == id }) {
             volumes[idx].isAutomountEnabled.toggle()
             storage.saveVolumes(volumes)
-            if volumes[idx].isAutomountEnabled { Task { await runAutomount() } }
+            let v = volumes[idx]
+            log("Automount \(v.isAutomountEnabled ? "enabled" : "disabled") for \(v.name)")
+            if v.isAutomountEnabled { Task { await runAutomount() } }
         }
     }
 
@@ -385,9 +447,11 @@ class VolumeManager: ObservableObject {
                 }
                 self.storage.saveVolumes(self.volumes)
                 await self.refreshState()
+                self.log("Imported \(count) volume(s) from backup")
                 self.successMessage = "Imported \(count) volumes successfully."
                 self.showSuccess = true
             } catch {
+                self.log("Import failed: \(error.localizedDescription)", level: .error)
                 self.lastError = "Could not import: \(error.localizedDescription)"
                 self.showError = true
             }
@@ -410,9 +474,11 @@ class VolumeManager: ObservableObject {
                 try await Task.detached(priority: .utility) {
                     try data.write(to: fileURL)
                 }.value
+                self.log("Exported \(snapshot.count) volume(s) to Downloads")
                 self.successMessage = "Backup saved to Downloads."
                 self.showSuccess = true
             } catch {
+                self.log("Export failed: \(error.localizedDescription)", level: .error)
                 self.lastError = "Export failed: \(error.localizedDescription)"
                 self.showError = true
             }

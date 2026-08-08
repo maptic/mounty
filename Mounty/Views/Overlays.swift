@@ -110,6 +110,60 @@ struct ConfirmationOverlay: View {
     }
 }
 
+// MARK: - Speed Test Result Overlay
+struct SpeedTestOverlay: View {
+    let volumeName: String
+    let result: SpeedTestService.Result
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.2).ignoresSafeArea()
+                .onTapGesture { withAnimation { isPresented = false } }
+
+            VStack(spacing: 16) {
+                Image(systemName: "speedometer")
+                    .font(.system(size: 32))
+                    .foregroundColor(.accentColor)
+
+                Text(volumeName).font(.headline)
+
+                Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
+                    GridRow {
+                        Label("Write", systemImage: "arrow.up.circle")
+                            .foregroundColor(.secondary)
+                        Text(String(format: "%.1f MB/s", result.writeSpeed))
+                            .fontWeight(.medium)
+                            .gridColumnAlignment(.trailing)
+                    }
+                    GridRow {
+                        Label("Read", systemImage: "arrow.down.circle")
+                            .foregroundColor(.secondary)
+                        Text(String(format: "%.1f MB/s", result.readSpeed))
+                            .fontWeight(.medium)
+                            .gridColumnAlignment(.trailing)
+                    }
+                }
+                .font(.callout)
+
+                Text("Test size: \(String(format: "%.0f", result.fileSizeMB)) MB")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Button("Done") { withAnimation { isPresented = false } }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(24)
+            .frame(width: 280)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .shadow(radius: 10)
+            .transition(.scale.combined(with: .opacity))
+        }
+        .zIndex(100)
+    }
+}
+
 // MARK: - Input Overlay
 /// Modal for text entry (e.g., Import Paths).
 struct InputOverlay: View {

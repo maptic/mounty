@@ -7,6 +7,7 @@ struct VolumeRow: View {
 
     var isMounted: Bool { manager.mountPaths[volume.id] != nil }
     var isBusy: Bool { manager.busyVolumes.contains(volume.id) }
+    var isTesting: Bool { manager.speedTestVolumeId == volume.id && manager.isRunningSpeedTest }
     var currentPath: String { manager.mountPaths[volume.id] ?? "Disconnected" }
 
     var body: some View {
@@ -91,7 +92,7 @@ struct VolumeRow: View {
                     .help("Open in Terminal")
                 }
 
-                // 4. Mount / Unmount
+                // 4. Mount / Unmount (also shows speed-test progress)
                 Button {
                     if isMounted {
                         manager.unmount(volume)
@@ -99,7 +100,7 @@ struct VolumeRow: View {
                         manager.mount(volume)
                     }
                 } label: {
-                    if isBusy {
+                    if isBusy || isTesting {
                         ProgressView().controlSize(.mini).scaleEffect(0.7)
                             .frame(width: 20, height: 20)
                     } else {
@@ -112,8 +113,8 @@ struct VolumeRow: View {
                 }
                 .buttonStyle(.plain)
                 .iconButtonHover(padding: 3)
-                .disabled(isBusy)
-                .help(isMounted ? "Disconnect" : "Connect")
+                .disabled(isBusy || isTesting)
+                .help(isTesting ? "Speed test running…" : (isMounted ? "Disconnect" : "Connect"))
             }
         }
         .padding(.horizontal, 12)
@@ -125,10 +126,19 @@ struct VolumeRow: View {
             if isMounted { manager.openInFinder(volume) }
         }
         .contextMenu {
+            if isMounted {
+                Button {
+                    manager.runSpeedTest(for: volume)
+                } label: {
+                    Label("Measure Speed…", systemImage: "speedometer")
+                }
+                .disabled(manager.isRunningSpeedTest)
+            }
+
             Button(role: .destructive) {
                 manager.removeVolume(volume.id)
             } label: {
-                Text("Remove Volume")
+                Label("Remove Volume", systemImage: "trash")
             }
         }
     }

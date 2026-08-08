@@ -11,18 +11,27 @@ struct ReachabilityService {
     /// so it never triggers the macOS TCC "access files on a network volume" prompt.
     /// It will block (and thus timeout) on a hung/dead mount, which is exactly the
     /// behaviour we need to detect silently dead kernel mounts.
-    nonisolated static func isMountPointAlive(path: String) -> Bool {
-        let group = DispatchGroup()
-        group.enter()
-        var alive = false
+    ///
+    /// Async: dispatches statfs to a background thread so the Swift cooperative
+    /// thread pool is never blocked waiting for a hung mount.
+    nonisolated static func isMountPointAlive(path: String) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let gate = ResumeGate()
 
-        DispatchQueue.global(qos: .userInteractive).async {
-            var buf = statfs()  // zero-init the struct
-            alive = statfs(path, &buf) == 0  // C function: 0 = success
-            group.leave()
+            DispatchQueue.global(qos: .userInteractive).async {
+                var buf = statfs()
+                let alive = statfs(path, &buf) == 0
+                if gate.tryResume() {
+                    continuation.resume(returning: alive)
+                }
+            }
+
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+                if gate.tryResume() {
+                    continuation.resume(returning: false)
+                }
+            }
         }
-
-        return group.wait(timeout: .now() + 1.0) == .success && alive
     }
 
     /// Validates TCP connectivity to SMB port (445).

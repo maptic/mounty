@@ -24,10 +24,8 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HeaderView(
                     title: "Settings",
-                    backAction: { withAnimation { viewMode = .list } },
-                    trailingAction: {
-                        withAnimation { showQuitConfirmation = true }
-                    },
+                    backAction: { viewMode = .list },
+                    trailingAction: { showQuitConfirmation = true },
                     trailingIcon: ("xmark.circle.fill", .red),
                     trailingHelp: "Quit Mounty"
                 )
@@ -144,7 +142,7 @@ struct SettingsView: View {
                     isPresented: $showResetConfirmation
                 ) {
                     manager.clearAllVolumes()
-                    withAnimation { viewMode = .list }
+                    viewMode = .list
                 }
             }
 

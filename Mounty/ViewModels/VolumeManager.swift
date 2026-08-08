@@ -151,7 +151,8 @@ class VolumeManager: ObservableObject {
         // 4. Heartbeat Timer (Silent Death Check)
         // Interval: 5s (Snappy)
         // Optimization: Gated by Network Status & Lower QoS
-        Timer.publish(every: 5, on: .main, in: .common)
+        // .default mode (not .common) so the timer does not fire during UI event tracking.
+        Timer.publish(every: 5, on: .main, in: .default)
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self, self.isNetworkUp else { return }
@@ -210,10 +211,12 @@ class VolumeManager: ObservableObject {
             )
         }.value
 
+        // Plain assignment — no withAnimation here. Background-triggered state
+        // changes must not inject an animation transaction that could delay
+        // visual feedback for concurrent user interactions (button presses, etc.).
+        // Mount-state icon transitions are animated locally in VolumeRow instead.
         if self.mountPaths != newPaths {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                self.mountPaths = newPaths
-            }
+            self.mountPaths = newPaths
         }
     }
 
@@ -240,7 +243,7 @@ class VolumeManager: ObservableObject {
                             address: volume.serverAddress
                         ) {
                             // 2. IO Reachability (Catches hung kernel mounts)
-                            if ReachabilityService.isMountPointAlive(path: path) {
+                            if await ReachabilityService.isMountPointAlive(path: path) {
                                 return (volume.id, path)
                             }
                         }
@@ -364,56 +367,55 @@ class VolumeManager: ObservableObject {
         let expandedPath = (pathString as NSString).expandingTildeInPath
         let url = URL(fileURLWithPath: expandedPath)
 
-        do {
-            let data = try Data(contentsOf: url)
-            let importedVolumes = try JSONDecoder().decode(
-                [Volume].self,
-                from: data
-            )
-            var count = 0
-            for volume in importedVolumes {
-                if !volumes.contains(where: {
-                    $0.serverAddress == volume.serverAddress
-                }) {
-                    volumes.append(volume)
-                    count += 1
+        // Data(contentsOf:) is synchronous blocking I/O — run it off the main actor.
+        Task {
+            do {
+                let data = try await Task.detached(priority: .utility) {
+                    try Data(contentsOf: url)
+                }.value
+                let importedVolumes = try JSONDecoder().decode([Volume].self, from: data)
+                var count = 0
+                for volume in importedVolumes {
+                    if !self.volumes.contains(where: {
+                        $0.serverAddress == volume.serverAddress
+                    }) {
+                        self.volumes.append(volume)
+                        count += 1
+                    }
                 }
+                self.storage.saveVolumes(self.volumes)
+                await self.refreshState()
+                self.successMessage = "Imported \(count) volumes successfully."
+                self.showSuccess = true
+            } catch {
+                self.lastError = "Could not import: \(error.localizedDescription)"
+                self.showError = true
             }
-            storage.saveVolumes(volumes)
-            Task { await refreshState() }
-
-            self.successMessage = "Imported \(count) volumes successfully."
-            self.showSuccess = true
-
-        } catch {
-            lastError = "Could not import: \(error.localizedDescription)"
-            showError = true
         }
     }
 
-    @discardableResult
-    func exportToDownloads() -> Bool {
-        do {
-            let downloadsURL = try FileManager.default.url(
-                for: .downloadsDirectory,
-                in: .userDomainMask,
-                appropriateFor: nil,
-                create: false
-            )
-            let fileURL = downloadsURL.appendingPathComponent(
-                "MountyBackup.json"
-            )
-
-            let data = try JSONEncoder().encode(volumes)
-            try data.write(to: fileURL)
-
-            successMessage = "Backup saved to Downloads."
-            showSuccess = true
-            return true
-        } catch {
-            lastError = "Export failed: \(error.localizedDescription)"
-            showError = true
-            return false
+    func exportToDownloads() {
+        let snapshot = volumes
+        // data.write(to:) is synchronous blocking I/O — run it off the main actor.
+        Task {
+            do {
+                let downloadsURL = try FileManager.default.url(
+                    for: .downloadsDirectory,
+                    in: .userDomainMask,
+                    appropriateFor: nil,
+                    create: false
+                )
+                let fileURL = downloadsURL.appendingPathComponent("MountyBackup.json")
+                let data = try JSONEncoder().encode(snapshot)
+                try await Task.detached(priority: .utility) {
+                    try data.write(to: fileURL)
+                }.value
+                self.successMessage = "Backup saved to Downloads."
+                self.showSuccess = true
+            } catch {
+                self.lastError = "Export failed: \(error.localizedDescription)"
+                self.showError = true
+            }
         }
     }
 }

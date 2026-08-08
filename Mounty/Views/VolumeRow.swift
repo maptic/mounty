@@ -18,6 +18,7 @@ struct VolumeRow: View {
                     isMounted ? .accentColor : .secondary.opacity(0.4)
                 )
                 .frame(width: 26)
+                .animation(.easeOut(duration: 0.2), value: isMounted)
                 .help(
                     isMounted
                         ? "Mounted at: \(currentPath)"

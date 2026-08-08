@@ -25,7 +25,7 @@ struct AddVolumeView: View {
                 title: "Add New Volume",
                 backAction: {
                     focusedField = nil
-                    withAnimation { viewMode = .list }
+                    viewMode = .list
                 }
             )
 

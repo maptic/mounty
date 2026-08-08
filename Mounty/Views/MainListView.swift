@@ -31,7 +31,10 @@ struct MainListView: View {
                     showLogo: true,
                     trailingAction: { viewMode = .settings },
                     trailingIcon: ("gearshape.fill", .secondary),
-                    trailingHelp: "Settings"
+                    trailingHelp: "Settings",
+                    trailingAction2: { viewMode = .logs },
+                    trailingIcon2: ("doc.text", .secondary),
+                    trailingHelp2: "App Logs"
                 )
                 .transaction { $0.animation = nil }
 

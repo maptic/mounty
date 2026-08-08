@@ -93,14 +93,6 @@ struct SettingsView: View {
                         .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
                     }
 
-                    Section(header: Text("Diagnostics")) {
-                        Button {
-                            viewMode = .logs
-                        } label: {
-                            Label("View App Logs", systemImage: "doc.text.magnifyingglass")
-                        }
-                    }
-
                     Section(header: Text("Application Info")) {
                         HStack {
                             Spacer()

@@ -9,6 +9,9 @@ struct IconButtonHover: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(padding)
+            // contentShape extends the hit-test area to include the padding so
+            // the full visible highlight region is always clickable.
+            .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .fill(isHovered ? Color.primary.opacity(0.08) : .clear)

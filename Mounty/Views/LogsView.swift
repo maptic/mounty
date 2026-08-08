@@ -54,9 +54,10 @@ struct LogsView: View {
                 } label: {
                     Label("Clear", systemImage: "trash")
                         .font(.system(size: 12))
+                        .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.secondary)
+                .iconButtonHover(cornerRadius: 5, padding: 4)
                 .help("Clear all log entries")
 
                 Spacer()
@@ -68,9 +69,11 @@ struct LogsView: View {
                 } label: {
                     Label("Copy All", systemImage: "doc.on.doc")
                         .font(.system(size: 12))
+                        .foregroundColor(
+                            manager.logEntries.isEmpty ? .secondary.opacity(0.4) : .secondary)
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.secondary)
+                .iconButtonHover(cornerRadius: 5, padding: 4)
                 .disabled(manager.logEntries.isEmpty)
                 .help("Copy all logs to clipboard")
             }

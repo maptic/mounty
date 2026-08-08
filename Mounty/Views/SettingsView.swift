@@ -53,44 +53,41 @@ struct SettingsView: View {
                     }
 
                     Section(header: Text("Volumes")) {
-                        HStack(spacing: 12) {
+                        HStack(spacing: 8) {
                             Button {
                                 importPath = ""
                                 withAnimation { showImportDialog = true }
                             } label: {
                                 Image(systemName: "square.and.arrow.up")
-                                    .font(.system(size: 15))
-                                    .frame(maxWidth: .infinity, minHeight: 26)
+                                    .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.plain)
-                            .iconButtonHover(cornerRadius: 6, padding: 6)
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                             .help("Import volumes from JSON")
 
                             Button {
                                 manager.exportToDownloads()
                             } label: {
                                 Image(systemName: "square.and.arrow.down")
-                                    .font(.system(size: 15))
-                                    .frame(maxWidth: .infinity, minHeight: 26)
+                                    .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.plain)
-                            .iconButtonHover(cornerRadius: 6, padding: 6)
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                             .help("Export volumes to Downloads")
 
                             Button {
                                 withAnimation { showResetConfirmation = true }
                             } label: {
                                 Image(systemName: "trash")
-                                    .font(.system(size: 15))
                                     .foregroundColor(.red)
-                                    .frame(maxWidth: .infinity, minHeight: 26)
+                                    .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.plain)
-                            .iconButtonHover(cornerRadius: 6, padding: 6)
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                             .help("Clear all volumes")
                         }
                         .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                        .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
                     }
 
                     Section(header: Text("Application Info")) {

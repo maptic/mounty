@@ -59,20 +59,18 @@ struct SettingsView: View {
                                 withAnimation { showImportDialog = true }
                             } label: {
                                 Image(systemName: "square.and.arrow.up")
-                                    .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.bordered)
-                            .controlSize(.small)
+                            .frame(maxWidth: .infinity)
                             .help("Import volumes from JSON")
 
                             Button {
                                 manager.exportToDownloads()
                             } label: {
                                 Image(systemName: "square.and.arrow.down")
-                                    .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.bordered)
-                            .controlSize(.small)
+                            .frame(maxWidth: .infinity)
                             .help("Export volumes to Downloads")
 
                             Button {
@@ -80,10 +78,9 @@ struct SettingsView: View {
                             } label: {
                                 Image(systemName: "trash")
                                     .foregroundColor(.red)
-                                    .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.bordered)
-                            .controlSize(.small)
+                            .frame(maxWidth: .infinity)
                             .help("Clear all volumes")
                         }
                         .listRowBackground(Color.clear)

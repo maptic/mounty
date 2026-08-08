@@ -433,7 +433,10 @@ class VolumeManager: ObservableObject {
         Task.detached(priority: .userInitiated) { [weak self] in
             MountService.toggleLoginItem(enabled: enabled)
             let isEnabled = MountService.isLoginItemEnabled()
-            await MainActor.run { self?.launchAtLogin = isEnabled }
+            // Rebind as 'let' so MainActor.run captures a constant, not the
+            // 'var' weak-optional 'self' — fixes the Swift 6 concurrency warning.
+            let ref = self
+            await MainActor.run { ref?.launchAtLogin = isEnabled }
         }
     }
 

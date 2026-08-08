@@ -19,8 +19,13 @@ struct ReachabilityService {
             let gate = ResumeGate()
 
             DispatchQueue.global(qos: .userInteractive).async {
-                var buf = statfs()
-                let alive = statfs(path, &buf) == 0
+                // Allocate uninitialized memory instead of calling statfs.init(),
+                // which is @MainActor under SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor.
+                // The C statfs(2) syscall writes the struct entirely so zero-init
+                // is unnecessary and the @MainActor init can be bypassed safely.
+                let buf = UnsafeMutablePointer<statfs>.allocate(capacity: 1)
+                defer { buf.deallocate() }
+                let alive = statfs(path, buf) == 0
                 if gate.tryResume() {
                     continuation.resume(returning: alive)
                 }
@@ -83,6 +88,11 @@ private final class ResumeGate: @unchecked Sendable {
     // nonisolated(unsafe): opts out of implicit @MainActor isolation;
     // thread safety is guaranteed by `lock`.
     private nonisolated(unsafe) var resumed = false
+
+    // Explicit nonisolated init: SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor would make
+    // the synthesised init() @MainActor, causing a warning when ResumeGate is created
+    // from nonisolated contexts. NSLock and Bool are not actor-isolated, so this is safe.
+    nonisolated init() {}
 
     /// Returns `true` the first time it is called; `false` on all subsequent calls.
     nonisolated func tryResume() -> Bool {

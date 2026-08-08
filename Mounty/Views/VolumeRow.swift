@@ -122,9 +122,13 @@ struct VolumeRow: View {
         .contentShape(Rectangle())
         .animation(.easeOut(duration: 0.1), value: isRowHovered)
         .onHover { isRowHovered = $0 }
-        .onTapGesture(count: 2) {
-            if isMounted { manager.openInFinder(volume) }
-        }
+        // simultaneousGesture lets the double-tap and child Button taps resolve
+        // without blocking each other, eliminating the click-delay on Buttons.
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded {
+                if isMounted { manager.openInFinder(volume) }
+            }
+        )
         .contextMenu {
             if isMounted {
                 Button {

@@ -103,6 +103,37 @@ For non-trivial work, write the spec before the code. Templates live in `specs/t
 
 Copy the templates into `specs/<NNN-short-name>/` for the feature you are working on.
 
+## UI responsiveness — non-negotiable rules
+
+The menu-bar popover has no loading screen and no tolerance for lag. Violations of these rules
+will break the user experience even if the code is otherwise correct.
+
+1. **Never block `@MainActor`.** Anything that may take >1 ms must run off the main actor.
+   - Use `Task.detached` (not `Task(priority:)`) when the work is CPU- or I/O-bound.
+     `Task(priority:)` from a `@MainActor` context **inherits the actor** and still runs on the
+     main thread — it does NOT move work off it. Only `Task.detached` escapes the actor.
+   - Launch Services (`NSWorkspace.urlForApplication`), `SMAppService`, `statfs`, `NetFSMountURLSync`,
+     and all network I/O must be in detached tasks or `nonisolated` services.
+   - Use `withTaskGroup` to parallelise multiple async operations (e.g. reachability checks)
+     instead of awaiting them sequentially.
+
+2. **Never put padding outside a `Button` to extend its hit area.**
+   Padding added *outside* the `Button` (via view modifiers) does **not** expand the button's
+   interactive region — only the icon itself is clickable, causing missed clicks. Use a
+   `ButtonStyle` instead: padding inside `makeBody` becomes part of the button's own frame.
+   The project uses `IconHoverButtonStyle` (via `.iconButtonHover()`) for all plain icon buttons.
+   Do NOT add `.buttonStyle(.plain)` before `.iconButtonHover()` — it overrides the style and
+   reverts to the small hit area.
+
+3. **Never use `.onTapGesture(count:)` on a parent that contains `Button` children.**
+   A multi-tap gesture on an ancestor blocks single-tap recognition on child buttons until the
+   system determines whether a second tap is coming. Use `.simultaneousGesture(TapGesture(count:))`
+   instead so both recognizers run concurrently.
+
+4. **Timers that wake the main actor must do minimal synchronous work.**
+   The 5-second heartbeat timer uses `.default` RunLoop mode (does not fire during event tracking)
+   and immediately delegates to a `Task.detached` for all detection work. Keep it that way.
+
 ## Guardrails
 
 - **Zero warnings policy.** The project must build and test with zero warnings. Before submitting a

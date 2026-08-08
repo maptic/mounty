@@ -128,8 +128,8 @@ struct MountService {
 
     // MARK: - Login Item
 
-    @MainActor
-    static func toggleLoginItem(enabled: Bool) {
+    // SMAppService is thread-safe; no main-actor requirement.
+    nonisolated static func toggleLoginItem(enabled: Bool) {
         do {
             if enabled {
                 try SMAppService.mainApp.register()
@@ -143,8 +143,7 @@ struct MountService {
         }
     }
 
-    @MainActor
-    static func isLoginItemEnabled() -> Bool {
+    nonisolated static func isLoginItemEnabled() -> Bool {
         return SMAppService.mainApp.status == .enabled
     }
 }

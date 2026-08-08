@@ -222,29 +222,36 @@ class VolumeManager: ObservableObject {
     private func runAutomount() async {
         guard isNetworkUp else { return }
 
-        for volume in volumes where volume.isAutomountEnabled {
-            if mountPaths[volume.id] == nil && !busyVolumes.contains(volume.id) {
-                busyVolumes.insert(volume.id)
+        let candidates = volumes.filter {
+            $0.isAutomountEnabled && mountPaths[$0.id] == nil && !busyVolumes.contains($0.id)
+        }
+        guard !candidates.isEmpty else { return }
+        for v in candidates { busyVolumes.insert(v.id) }
 
-                let isReachable = await ReachabilityService.isServerReachable(
-                    address: volume.serverAddress
-                )
-
-                if isReachable && mountPaths[volume.id] == nil {
-                    guard let url = URL(string: volume.serverAddress) else {
-                        busyVolumes.remove(volume.id)
-                        continue
-                    }
-                    log("Automounting \(volume.name)")
-
-                    if let path = await MountService.mount(url: url) {
-                        self.mountPaths[volume.id] = path
-                        log("Automounted \(volume.name) → \(path)")
-                    } else {
-                        log("Automount failed for \(volume.name)", level: .warning)
-                    }
+        await withTaskGroup(of: (UUID, String?, String).self) { group in
+            for volume in candidates {
+                guard let url = URL(string: volume.serverAddress) else {
+                    busyVolumes.remove(volume.id)
+                    continue
                 }
-                busyVolumes.remove(volume.id)
+                let addr = volume.serverAddress
+                let name = volume.name
+                let id = volume.id
+                group.addTask {
+                    let isReachable = await ReachabilityService.isServerReachable(address: addr)
+                    guard isReachable else { return (id, nil, name) }
+                    return (id, await MountService.mount(url: url), name)
+                }
+            }
+
+            for await (id, path, name) in group {
+                if let path {
+                    self.mountPaths[id] = path
+                    log("Automounted \(name) → \(path)")
+                } else {
+                    log("Automount failed for \(name)", level: .warning)
+                }
+                busyVolumes.remove(id)
             }
         }
     }
@@ -310,15 +317,22 @@ class VolumeManager: ObservableObject {
 
     // MARK: - Actions
 
-    // Runs the 6 NSWorkspace lookups asynchronously so init() returns immediately
-    // and the first UI frame is not blocked by Launch Services queries.
+    // Runs the 6 NSWorkspace lookups off the main actor so the first UI frame
+    // is never blocked by Launch Services queries.
+    // Task.detached is required here — Task(priority:) inherits @MainActor and
+    // would run the synchronous lookups on the main thread.
     private func refreshInstalledTerminals() {
-        Task(priority: .utility) {
-            self.availableTerminals = self.knownTerminals.filter { (_, bundleID) in
+        let known = knownTerminals
+        Task.detached(priority: .utility) { [weak self] in
+            let installed = known.filter { (_, bundleID) in
                 NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
             }
-            if !self.availableTerminals.contains(where: { $0.id == self.preferredTerminal }) {
-                self.preferredTerminal = "com.apple.Terminal"
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.availableTerminals = installed
+                if !self.availableTerminals.contains(where: { $0.id == self.preferredTerminal }) {
+                    self.preferredTerminal = "com.apple.Terminal"
+                }
             }
         }
     }
@@ -414,8 +428,13 @@ class VolumeManager: ObservableObject {
     }
 
     func toggleLaunchAtLogin(_ enabled: Bool) {
-        MountService.toggleLoginItem(enabled: enabled)
-        launchAtLogin = MountService.isLoginItemEnabled()
+        // SMAppService calls can be slow; run off the main actor to avoid
+        // blocking the UI when the toggle is flipped in Settings.
+        Task.detached(priority: .userInitiated) { [weak self] in
+            MountService.toggleLoginItem(enabled: enabled)
+            let isEnabled = MountService.isLoginItemEnabled()
+            await MainActor.run { self?.launchAtLogin = isEnabled }
+        }
     }
 
     func setPreferredTerminal(_ bundleID: String) {

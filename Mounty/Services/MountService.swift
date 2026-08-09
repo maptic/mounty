@@ -90,7 +90,12 @@ struct MountService {
                 logger.info("Polite unmount successful: \(path)")
             } catch {
                 logger.warning("Polite unmount failed. Executing MNT_FORCE.")
-                _ = Darwin.unmount(path, MNT_FORCE)
+                let forceResult = Darwin.unmount(path, MNT_FORCE)
+                if forceResult == 0 {
+                    logger.info("Force unmount successful: \(path)")
+                } else {
+                    logger.error("Force unmount failed: \(path). errno: \(errno)")
+                }
             }
         }.value
     }

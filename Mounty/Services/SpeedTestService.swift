@@ -56,8 +56,19 @@ struct SpeedTestService {
                         _ = Darwin.fcntl(rfd, F_NOCACHE, 1)
                         let readStart = Date()
                         var buffer = [UInt8](repeating: 0, count: byteCount)
+                        // read(2) may return fewer bytes than requested on network
+                        // filesystems; loop until all bytes are consumed or EOF/error.
                         buffer.withUnsafeMutableBytes { ptr in
-                            _ = Darwin.read(rfd, ptr.baseAddress!, byteCount)
+                            var remaining = byteCount
+                            var offset = 0
+                            while remaining > 0 {
+                                let n = Darwin.read(
+                                    rfd, ptr.baseAddress!.advanced(by: offset), remaining
+                                )
+                                if n <= 0 { break }
+                                offset += n
+                                remaining -= n
+                            }
                         }
                         readDuration = max(Date().timeIntervalSince(readStart), 0.001)
                         Darwin.close(rfd)

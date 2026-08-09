@@ -82,4 +82,35 @@ struct SystemMountServiceTests {
         )
         #expect(result == nil)
     }
+
+    @Test func doesNotMatchOnHostSubstring() {
+        // "nas.local" must NOT match a source from "other-nas.local".
+        // Guards against substring `contains` producing a false positive.
+        let mounts = [
+            SystemMountService.MountPoint(
+                path: "/Volumes/media",
+                source: "//other-nas.local/media"
+            )
+        ]
+        let result = SystemMountService.findMountPath(
+            for: volume("smb://nas.local/media"),
+            in: mounts
+        )
+        #expect(result == nil)
+    }
+
+    @Test func matchesSourceWithDomainUserAtHost() {
+        // Windows-style sources embed "domain;user@host/share".
+        let mounts = [
+            SystemMountService.MountPoint(
+                path: "/Volumes/media",
+                source: "//DOMAIN;alice@nas.local/media"
+            )
+        ]
+        let result = SystemMountService.findMountPath(
+            for: volume("smb://nas.local/media"),
+            in: mounts
+        )
+        #expect(result == "/Volumes/media")
+    }
 }

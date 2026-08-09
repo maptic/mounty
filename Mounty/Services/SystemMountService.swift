@@ -47,13 +47,11 @@ struct SystemMountService {
         let configHost = configUrl.host?.lowercased() ?? "unknown"
 
         for mount in mounts {
-            let source = mount.source.lowercased()
-            if source.contains(configHost) {
-                if configPath.count > 1 {
-                    if source.hasSuffix(configPath) { return mount.path }
-                } else {
-                    return mount.path
-                }
+            guard extractHost(from: mount.source) == configHost else { continue }
+            if configPath.count > 1 {
+                if mount.source.lowercased().hasSuffix(configPath) { return mount.path }
+            } else {
+                return mount.path
             }
         }
         return nil
@@ -66,15 +64,26 @@ struct SystemMountService {
         let path = url.path.lowercased()
 
         for mount in mounts {
-            let source = mount.source.lowercased()
-            if source.contains(host) {
-                if path.count > 1 {
-                    if source.hasSuffix(path) { return mount.path }
-                } else {
-                    return mount.path
-                }
+            guard extractHost(from: mount.source) == host else { continue }
+            if path.count > 1 {
+                if mount.source.lowercased().hasSuffix(path) { return mount.path }
+            } else {
+                return mount.path
             }
         }
         return nil
+    }
+
+    /// Extracts the hostname from a kernel mount source of the form
+    /// "//[domain;user@]host/share". Uses string splitting rather than URL
+    /// parsing to correctly handle SMB sources with "domain;user@host" userinfo
+    /// that Foundation's URL parser may reject.
+    private nonisolated static func extractHost(from source: String) -> String? {
+        guard source.hasPrefix("//") else { return nil }
+        let withoutSlashes = String(source.dropFirst(2))
+        // Take the segment after the last "@" to strip any "domain;user@" prefix.
+        let afterAt = withoutSlashes.components(separatedBy: "@").last ?? withoutSlashes
+        let host = afterAt.components(separatedBy: "/").first ?? afterAt
+        return host.isEmpty ? nil : host.lowercased()
     }
 }

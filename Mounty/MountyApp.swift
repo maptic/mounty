@@ -3,7 +3,6 @@ import SwiftUI
 @main
 @MainActor
 struct MountyApp: App {
-    @StateObject var manager = VolumeManager()
 
     private static let paddedIcon: NSImage = {
         guard let image = NSImage(named: "MenuIcon") else { return NSImage() }
@@ -20,7 +19,7 @@ struct MountyApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            RootView(manager: manager)
+            RootView()
         } label: {
             Image(nsImage: Self.paddedIcon)
         }

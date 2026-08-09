@@ -1,43 +1,42 @@
-import Combine
 import Network
 import SwiftUI
-import UniformTypeIdentifiers
 import os
 
 /// ViewModel: Orchestrates detection logic, automounting, state management, and data persistence.
 @MainActor
-class VolumeManager: ObservableObject {
+@Observable
+class VolumeManager {
 
     // MARK: - UI State
-    @Published var volumes: [Volume] = []
-    @Published var mountPaths: [UUID: String] = [:]
-    @Published var busyVolumes: Set<UUID> = []
+    var volumes: [Volume] = []
+    var mountPaths: [UUID: String] = [:]
+    var busyVolumes: Set<UUID> = []
 
     // UI Controls
-    @Published var searchText = ""
-    @Published var sortOrder: SortOrder = .name
-    @Published var sortDirection: SortDirection = .ascending
-    @Published var showSearch = false
+    var searchText = ""
+    var sortOrder: SortOrder = .name
+    var sortDirection: SortDirection = .ascending
+    var showSearch = false
 
     // Preferences
-    @Published var launchAtLogin: Bool = MountService.isLoginItemEnabled()
-    @Published var preferredTerminal: String
-    @Published var availableTerminals: [(name: String, id: String)] = []
+    var launchAtLogin: Bool = MountService.isLoginItemEnabled()
+    var preferredTerminal: String
+    var availableTerminals: [(name: String, id: String)] = []
 
     // Feedback & Errors
-    @Published var lastError: String? = nil
-    @Published var showError: Bool = false
-    @Published var successMessage: String? = nil
-    @Published var showSuccess: Bool = false
+    var lastError: String? = nil
+    var showError: Bool = false
+    var successMessage: String? = nil
+    var showSuccess: Bool = false
 
     // In-app log buffer (capped at maxLogEntries)
-    @Published var logEntries: [LogEntry] = []
+    var logEntries: [LogEntry] = []
 
     // Speed test state
-    @Published var speedTestVolumeId: UUID? = nil
-    @Published var isRunningSpeedTest = false
-    @Published var speedTestResult: SpeedTestService.Result? = nil
-    @Published var speedTestError: String? = nil
+    var speedTestVolumeId: UUID? = nil
+    var isRunningSpeedTest = false
+    var speedTestResult: SpeedTestService.Result? = nil
+    var speedTestError: String? = nil
 
     private var isNetworkUp: Bool = true
     private let maxLogEntries = 200
@@ -45,7 +44,6 @@ class VolumeManager: ObservableObject {
     // Dependencies
     private let storage = PersistenceService()
     private let eventMonitor = EventMonitorService()
-    private var cancellables = Set<AnyCancellable>()
 
     // Logger (os.Logger for Console.app; log() also feeds the in-app ring buffer)
     private let logger = Logger(
@@ -66,7 +64,7 @@ class VolumeManager: ObservableObject {
         self.volumes = storage.loadVolumes()
         self.preferredTerminal = storage.loadTerminalBundleID()
 
-        setupPipelines()
+        startEventObservation()
         refreshInstalledTerminals()
 
         Task {
@@ -176,58 +174,56 @@ class VolumeManager: ObservableObject {
         speedTestError = nil
     }
 
-    // MARK: - Event Pipelines
+    // MARK: - Event Observation
 
-    private func setupPipelines() {
-        // 1. Network Status (Reachability) - High Priority Reaction
-        eventMonitor.networkStatus
-            .receive(on: RunLoop.main)
-            .sink { [weak self] status in
-                guard let self else { return }
+    private func startEventObservation() {
+        // All tasks below inherit @MainActor from this context. They suspend at each
+        // `for await`, releasing the main actor between events. The actual I/O work is
+        // dispatched off-actor inside refreshState() and runAutomount() via Task.detached.
 
-                let wasUp = self.isNetworkUp
-                self.isNetworkUp = (status == .satisfied)
-
-                if self.isNetworkUp != wasUp {
-                    self.log("Network: \(self.isNetworkUp ? "UP" : "DOWN")")
+        // 1. Network Status — high-priority reaction
+        Task { [weak self] in
+            guard let self else { return }
+            for await status in eventMonitor.networkStatusStream {
+                let wasUp = isNetworkUp
+                isNetworkUp = (status == .satisfied)
+                if isNetworkUp != wasUp {
+                    log("Network: \(isNetworkUp ? "UP" : "DOWN")")
                 }
-
-                Task(priority: .userInitiated) {
-                    await self.refreshState()
-                    if self.isNetworkUp { await self.runAutomount() }
-                }
+                await refreshState()
+                if isNetworkUp { await runAutomount() }
             }
-            .store(in: &cancellables)
+        }
 
-        // 2. Interfaces Changed (VPN Toggles) - High Priority Reaction
-        eventMonitor.interfacesChanged
-            .receive(on: RunLoop.main)
-            .sink { [weak self] in
-                self?.log("Network interface changed — retrying connections")
-                Task(priority: .userInitiated) {
-                    await self?.refreshState()
-                    await self?.runAutomount()
-                }
+        // 2. Interface changes (VPN) — debounce applied in EventMonitorService
+        Task { [weak self] in
+            guard let self else { return }
+            for await _ in eventMonitor.interfacesChangedStream {
+                log("Network interface changed — retrying connections")
+                await refreshState()
+                await runAutomount()
             }
-            .store(in: &cancellables)
+        }
 
-        // 3. File System (Manual Mounts)
-        eventMonitor.fileSystemChanged
-            .receive(on: RunLoop.main)
-            .sink { [weak self] in
-                Task(priority: .utility) { await self?.refreshState() }
+        // 3. File system (manual mounts by other apps)
+        Task { [weak self] in
+            guard let self else { return }
+            for await _ in eventMonitor.fileSystemChangedStream {
+                await refreshState()
             }
-            .store(in: &cancellables)
+        }
 
-        // 4. Heartbeat Timer (Silent Death Check)
-        // .default mode (not .common) so the timer does not fire during UI event tracking.
-        Timer.publish(every: 5, on: .main, in: .default)
-            .autoconnect()
-            .sink { [weak self] _ in
-                guard let self = self, self.isNetworkUp else { return }
-                Task(priority: .utility) { await self.refreshState() }
+        // 4. Heartbeat (silent death check, every 5 s)
+        // Task.sleep is RunLoop-independent and does not interact with event-tracking
+        // modes — it fires from the cooperative thread pool after the sleep interval.
+        Task(priority: .utility) { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard let self else { break }
+                guard isNetworkUp else { continue }
+                await refreshState()
             }
-            .store(in: &cancellables)
+        }
     }
 
     // MARK: - Logic
@@ -493,12 +489,9 @@ class VolumeManager: ObservableObject {
         storage.saveTerminalBundleID(bundleID)
     }
 
-    // MARK: - Import / Export Logic
+    // MARK: - Import / Export
 
-    func importVolumes(fromPath pathString: String) {
-        let expandedPath = (pathString as NSString).expandingTildeInPath
-        let url = URL(fileURLWithPath: expandedPath)
-
+    func importVolumes(fromURL url: URL) {
         // Data(contentsOf:) is synchronous blocking I/O — run it off the main actor.
         Task {
             do {
@@ -528,24 +521,17 @@ class VolumeManager: ObservableObject {
         }
     }
 
-    func exportToDownloads() {
+    func exportToURL(_ url: URL) {
         let snapshot = volumes
         // data.write(to:) is synchronous blocking I/O — run it off the main actor.
         Task {
             do {
-                let downloadsURL = try FileManager.default.url(
-                    for: .downloadsDirectory,
-                    in: .userDomainMask,
-                    appropriateFor: nil,
-                    create: false
-                )
-                let fileURL = downloadsURL.appendingPathComponent("MountyBackup.json")
                 let data = try JSONEncoder().encode(snapshot)
                 try await Task.detached(priority: .utility) {
-                    try data.write(to: fileURL)
+                    try data.write(to: url)
                 }.value
-                self.log("Exported \(snapshot.count) volume(s) to Downloads")
-                self.successMessage = "Backup saved to Downloads."
+                self.log("Exported \(snapshot.count) volume(s)")
+                self.successMessage = "Backup saved successfully."
                 self.showSuccess = true
             } catch {
                 self.log("Export failed: \(error.localizedDescription)", level: .error)

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct RootView: View {
-    @StateObject var manager = VolumeManager()
+    @State private var manager = VolumeManager()
     @State private var viewMode: AppViewMode = .list
 
     var body: some View {

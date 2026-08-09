@@ -1,30 +1,39 @@
 import AppKit
-import Combine
 import Foundation
 import Network
 import os
 
-/// Monitors OS events to trigger application logic.
-/// Observes Network Status, Interface Fingerprints (VPN), and Kernel Mount events.
+/// Monitors OS events and exposes them as async sequences.
 class EventMonitorService {
 
-    let networkStatus = CurrentValueSubject<NWPath.Status, Never>(.satisfied)
-    let interfacesChanged = PassthroughSubject<Void, Never>()
-    let fileSystemChanged = PassthroughSubject<Void, Never>()
+    let networkStatusStream: AsyncStream<NWPath.Status>
+    let interfacesChangedStream: AsyncStream<Void>
+    let fileSystemChangedStream: AsyncStream<Void>
+
+    private let networkStatusContinuation: AsyncStream<NWPath.Status>.Continuation
+    private let interfacesChangedContinuation: AsyncStream<Void>.Continuation
+    private let fileSystemChangedContinuation: AsyncStream<Void>.Continuation
 
     private let monitor = NWPathMonitor()
-    private let queue = DispatchQueue(
-        label: "com.mounty.network",
-        qos: .background
-    )
-    private var cancellables = Set<AnyCancellable>()
-    private var lastInterfaceFingerprint: String = ""
+    private let monitorQueue = DispatchQueue(label: "com.mounty.network", qos: .background)
+    // Written and read exclusively on monitorQueue — nonisolated(unsafe) bypasses the
+    // implicit @MainActor isolation without requiring an @unchecked Sendable wrapper.
+    private nonisolated(unsafe) var lastInterfaceFingerprint = ""
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "Mounty",
         category: "EventMonitor"
     )
 
     init() {
+        (networkStatusStream, networkStatusContinuation) = AsyncStream.makeStream(
+            of: NWPath.Status.self, bufferingPolicy: .bufferingNewest(1)
+        )
+        (interfacesChangedStream, interfacesChangedContinuation) = AsyncStream.makeStream(
+            of: Void.self, bufferingPolicy: .bufferingNewest(1)
+        )
+        (fileSystemChangedStream, fileSystemChangedContinuation) = AsyncStream.makeStream(
+            of: Void.self, bufferingPolicy: .bufferingNewest(1)
+        )
         startNetworkMonitoring()
         startFileSystemMonitoring()
     }
@@ -32,39 +41,38 @@ class EventMonitorService {
     private func startNetworkMonitoring() {
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
+            networkStatusContinuation.yield(path.status)
 
-            self.networkStatus.send(path.status)
-
-            // Fingerprint interfaces to detect VPN tunnels
             let currentInterfaces = path.availableInterfaces
                 .map { "\($0.name):\($0.type)" }
                 .sorted()
                 .joined(separator: ",")
 
-            if currentInterfaces != self.lastInterfaceFingerprint {
-                self.logger.debug(
-                    "Interface topology changed: \(currentInterfaces, privacy: .public)"
-                )
-                self.lastInterfaceFingerprint = currentInterfaces
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    self.interfacesChanged.send()
+            if currentInterfaces != lastInterfaceFingerprint {
+                logger.debug("Interface topology changed: \(currentInterfaces, privacy: .public)")
+                lastInterfaceFingerprint = currentInterfaces
+                // 1-second debounce: let the interface topology settle before
+                // triggering a reconnect attempt.
+                Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(1))
+                    self?.interfacesChangedContinuation.yield()
                 }
             }
         }
-        monitor.start(queue: queue)
+        monitor.start(queue: monitorQueue)
     }
 
     private func startFileSystemMonitoring() {
         let center = NSWorkspace.shared.notificationCenter
-        Publishers.Merge3(
-            center.publisher(for: NSWorkspace.didMountNotification),
-            center.publisher(for: NSWorkspace.didUnmountNotification),
-            center.publisher(for: NSWorkspace.didRenameVolumeNotification)
-        ).sink { [weak self] _ in
-            self?.logger.debug("Kernel filesystem event received")
-            self?.fileSystemChanged.send()
+        for name in [
+            NSWorkspace.didMountNotification,
+            NSWorkspace.didUnmountNotification,
+            NSWorkspace.didRenameVolumeNotification,
+        ] {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.logger.debug("Kernel filesystem event received")
+                self?.fileSystemChangedContinuation.yield()
+            }
         }
-        .store(in: &cancellables)
     }
 }

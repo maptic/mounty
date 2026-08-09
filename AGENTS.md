@@ -11,8 +11,8 @@ Mounty is a macOS **menu-bar app** (SwiftUI) that keeps SMB network shares mount
 It reacts to network/VPN/reachability changes and re-mounts shares as soon as their server is
 reachable.
 
-- Language: Swift 5 / Swift Concurrency (`async`/`await`). **Avoid Combine for new code** — prefer
-  async APIs (existing `EventMonitorService` still uses Combine; do not expand that pattern).
+- Language: Swift 5.9+ / Swift Concurrency (`async`/`await`). **Avoid Combine entirely** — use
+  `AsyncStream` for event sequences and `async`/`await` everywhere else.
 - UI: SwiftUI, `MenuBarExtra` (`.window` style).
 - Target: macOS 26.1+, Xcode 26+. Bundle id `ch.maptic.Mounty`.
 - Concurrency: default actor isolation is `MainActor` (see build settings); services that touch the
@@ -32,7 +32,7 @@ Mounty/Mounty/
 │  ├─ EventMonitorService.swift # NWPathMonitor + workspace mount notifications (Combine subjects)
 │  └─ PersistenceService.swift  # UserDefaults-backed storage (injectable defaults)
 ├─ ViewModels/
-│  └─ VolumeManager.swift     # @MainActor ObservableObject; orchestrates detection/automount/state
+│  └─ VolumeManager.swift     # @MainActor @Observable class; orchestrates detection/automount/state
 └─ Views/                     # SwiftUI views only — no business logic
 ```
 
@@ -63,6 +63,10 @@ When running inside an IDE with MCP tools available (e.g. Xcode), prefer `BuildP
 - PascalCase types, camelCase members. `let` by default; `@State private var` for SwiftUI state.
 - No force-unwrapping. Prefer `guard let`/`if let`. Leverage the strong type system.
 - Comment non-obvious logic only; match the surrounding density.
+- **Observable pattern**: use `@Observable` (not `ObservableObject`) for ViewModel classes.
+  `@State` owns the instance (in the root scene); child views use plain `var` for read-only access
+  or `@Bindable var` when two-way bindings (`$property`) are needed. Never use `@Published`,
+  `@StateObject`, or `@ObservedObject`.
 
 ## Testing policy
 
@@ -130,9 +134,10 @@ will break the user experience even if the code is otherwise correct.
    system determines whether a second tap is coming. Use `.simultaneousGesture(TapGesture(count:))`
    instead so both recognizers run concurrently.
 
-4. **Timers that wake the main actor must do minimal synchronous work.**
-   The 5-second heartbeat timer uses `.default` RunLoop mode (does not fire during event tracking)
-   and immediately delegates to a `Task.detached` for all detection work. Keep it that way.
+4. **The heartbeat uses `Task.sleep`, not a `Timer`.**
+   `Task.sleep(for:)` fires from the cooperative thread pool and has no RunLoop mode — it never
+   interferes with UI event tracking regardless of what the user is doing. The heartbeat task
+   calls `refreshState()` which immediately delegates all I/O to `Task.detached`.
 
 ## Guardrails
 

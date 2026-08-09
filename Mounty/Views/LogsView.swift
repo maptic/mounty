@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LogsView: View {
-    @ObservedObject var manager: VolumeManager
+    var manager: VolumeManager
     @Binding var viewMode: AppViewMode
 
     var body: some View {

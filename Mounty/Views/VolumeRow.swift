@@ -2,7 +2,7 @@ import SwiftUI
 
 struct VolumeRow: View {
     let volume: Volume
-    @ObservedObject var manager: VolumeManager
+    var manager: VolumeManager
     var onEdit: () -> Void = {}
     @State private var isRowHovered = false
 

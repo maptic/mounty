@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MainListView: View {
-    @ObservedObject var manager: VolumeManager
+    @Bindable var manager: VolumeManager
     @Binding var viewMode: AppViewMode
 
     private let rowHeight: CGFloat = 50

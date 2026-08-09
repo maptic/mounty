@@ -77,7 +77,7 @@ struct VolumeFormFields: View {
 // MARK: - Add Volume View
 
 struct AddVolumeView: View {
-    @ObservedObject var manager: VolumeManager
+    var manager: VolumeManager
     @Binding var viewMode: AppViewMode
 
     @State private var name = ""
@@ -127,7 +127,7 @@ struct AddVolumeView: View {
 
 struct EditVolumeView: View {
     let volume: Volume
-    @ObservedObject var manager: VolumeManager
+    var manager: VolumeManager
     @Binding var viewMode: AppViewMode
 
     @State private var name: String

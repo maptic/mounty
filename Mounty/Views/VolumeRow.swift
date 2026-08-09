@@ -3,6 +3,7 @@ import SwiftUI
 struct VolumeRow: View {
     let volume: Volume
     @ObservedObject var manager: VolumeManager
+    var onEdit: () -> Void = {}
     @State private var isRowHovered = false
 
     var isMounted: Bool { manager.mountPaths[volume.id] != nil }
@@ -114,6 +115,7 @@ struct VolumeRow: View {
             }
         }
         .padding(.horizontal, 12)
+        .frame(maxHeight: .infinity)
         .background(isRowHovered ? Color.primary.opacity(0.04) : .clear)
         .contentShape(Rectangle())
         .animation(.easeOut(duration: 0.1), value: isRowHovered)
@@ -126,6 +128,12 @@ struct VolumeRow: View {
             }
         )
         .contextMenu {
+            Button {
+                onEdit()
+            } label: {
+                Label("Edit Volume…", systemImage: "pencil")
+            }
+
             if isMounted {
                 Button {
                     manager.runSpeedTest(for: volume)
@@ -134,6 +142,8 @@ struct VolumeRow: View {
                 }
                 .disabled(manager.isRunningSpeedTest)
             }
+
+            Divider()
 
             Button(role: .destructive) {
                 manager.removeVolume(volume.id)

@@ -21,4 +21,4 @@ struct Volume: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
-enum AppViewMode { case list, add, settings, logs }
+enum AppViewMode: Equatable { case list, add, settings, logs, edit(Volume) }

@@ -82,20 +82,32 @@ class VolumeManager: ObservableObject {
             searchText.isEmpty
                 ? true : $0.name.localizedCaseInsensitiveContains(searchText)
         }
-
-        let sorted = filtered.sorted {
-            let comparisonResult: ComparisonResult
+        return filtered.sorted { lhs, rhs in
             switch sortOrder {
             case .name:
-                comparisonResult = $0.name.localizedStandardCompare($1.name)
+                let cmp = lhs.name.localizedStandardCompare(rhs.name)
+                return sortDirection == .ascending
+                    ? cmp == .orderedAscending : cmp == .orderedDescending
             case .dateAdded:
-                comparisonResult = $0.dateAdded.compare($1.dateAdded)
+                let cmp = lhs.dateAdded.compare(rhs.dateAdded)
+                return sortDirection == .ascending
+                    ? cmp == .orderedAscending : cmp == .orderedDescending
+            case .state:
+                let lp = statePriority(lhs), rp = statePriority(rhs)
+                if lp != rp {
+                    return sortDirection == .ascending ? lp < rp : lp > rp
+                }
+                let cmp = lhs.name.localizedStandardCompare(rhs.name)
+                return sortDirection == .ascending
+                    ? cmp == .orderedAscending : cmp == .orderedDescending
             }
-            return sortDirection == .ascending
-                ? (comparisonResult == .orderedAscending)
-                : (comparisonResult == .orderedDescending)
         }
-        return sorted
+    }
+
+    private func statePriority(_ volume: Volume) -> Int {
+        if mountPaths[volume.id] != nil { return 0 }
+        if busyVolumes.contains(volume.id) { return 1 }
+        return 2
     }
 
     var speedTestVolumeName: String {
@@ -105,6 +117,7 @@ class VolumeManager: ObservableObject {
     enum SortOrder: String, CaseIterable {
         case name = "Name"
         case dateAdded = "Date Added"
+        case state = "State"
     }
 
     enum SortDirection {
@@ -401,6 +414,41 @@ class VolumeManager: ObservableObject {
         volumes.removeAll { $0.id == id }
         storage.saveVolumes(volumes)
         Task { await refreshState() }
+    }
+
+    func editVolume(id: UUID, name: String, serverAddress: String) {
+        guard let idx = volumes.firstIndex(where: { $0.id == id }) else { return }
+        let old = volumes[idx]
+        let addressChanged = old.serverAddress != serverAddress
+
+        volumes[idx].name = name
+        volumes[idx].serverAddress = serverAddress
+        storage.saveVolumes(volumes)
+        log("Updated volume: \(name)")
+
+        guard addressChanged, let oldPath = mountPaths[id] else { return }
+
+        // Unmount the old connection by its recorded path, then remount at the new address.
+        // Using oldPath (not the new address) ensures we disconnect the right kernel mount
+        // even if the new address points to a different share entirely.
+        mountPaths.removeValue(forKey: id)
+        busyVolumes.insert(id)
+        Task {
+            await MountService.unmount(path: oldPath)
+            guard let url = URL(string: serverAddress) else {
+                self.busyVolumes.remove(id)
+                return
+            }
+            if let newPath = await MountService.mount(url: url) {
+                self.mountPaths[id] = newPath
+                self.log("Reconnected \(name) → \(newPath)")
+            } else {
+                self.log("Reconnect failed after edit: \(name)", level: .error)
+                self.lastError = "Reconnect failed. Verify address and credentials."
+                self.showError = true
+            }
+            self.busyVolumes.remove(id)
+        }
     }
 
     func clearAllVolumes() {

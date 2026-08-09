@@ -37,6 +37,13 @@ struct RootView: View {
                             insertion: .move(edge: .trailing),
                             removal: .move(edge: .trailing)
                         ))
+            case .edit(let volume):
+                EditVolumeView(volume: volume, manager: manager, viewMode: $viewMode)
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .trailing),
+                            removal: .move(edge: .trailing)
+                        ))
             }
 
             // Speed test overlays — rendered above any active view.

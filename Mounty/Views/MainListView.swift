@@ -113,8 +113,13 @@ struct MainListView: View {
                     ScrollView {
                         VStack(spacing: 0) {
                             ForEach(manager.filteredAndSortedVolumes) { volume in
-                                VolumeRow(volume: volume, manager: manager)
-                                    .frame(height: rowHeight)
+                                VolumeRow(
+                                    volume: volume, manager: manager,
+                                    onEdit: {
+                                        viewMode = .edit(volume)
+                                    }
+                                )
+                                .frame(height: rowHeight)
                                 Divider()
                             }
                         }

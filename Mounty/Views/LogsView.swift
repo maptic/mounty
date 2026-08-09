@@ -8,7 +8,7 @@ struct LogsView: View {
         VStack(spacing: 0) {
             HeaderView(
                 title: "App Logs",
-                backAction: { viewMode = .settings }
+                backAction: { viewMode = .list }
             )
 
             Divider()

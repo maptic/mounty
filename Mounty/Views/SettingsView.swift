@@ -1,22 +1,21 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
-    @ObservedObject var manager: VolumeManager
+    @Bindable var manager: VolumeManager
     @Binding var viewMode: AppViewMode
 
     // Overlay State
     @State private var showResetConfirmation = false
     @State private var showQuitConfirmation = false
-    @State private var showImportDialog = false
-
-    // Import Logic
-    @State private var importPath = ""
 
     let appVersion =
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
         ?? "1.0"
     let buildNumber =
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+    private let repositoryURL = URL(string: "https://github.com/maptic/mounty")
 
     var body: some View {
         ZStack {
@@ -24,10 +23,8 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HeaderView(
                     title: "Settings",
-                    backAction: { withAnimation { viewMode = .list } },
-                    trailingAction: {
-                        withAnimation { showQuitConfirmation = true }
-                    },
+                    backAction: { viewMode = .list },
+                    trailingAction: { showQuitConfirmation = true },
                     trailingIcon: ("xmark.circle.fill", .red),
                     trailingHelp: "Quit Mounty"
                 )
@@ -55,38 +52,41 @@ struct SettingsView: View {
                     }
 
                     Section(header: Text("Volumes")) {
-                        HStack(spacing: 12) {
+                        HStack(spacing: 8) {
                             Button {
-                                importPath = ""
-                                withAnimation { showImportDialog = true }
+                                showOpenPanel()
                             } label: {
-                                Image(systemName: "square.and.arrow.up")
+                                Label("Import", systemImage: "square.and.arrow.up")
+                                    .font(.callout)
                                     .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.bordered)
-                            .help("Import volumes from JSON")
+                            .iconButtonHover(cornerRadius: 6, padding: 6)
+                            .help("Import volumes from a JSON backup file")
 
                             Button {
-                                manager.exportToDownloads()
+                                showSavePanel()
                             } label: {
-                                Image(systemName: "square.and.arrow.down")
+                                Label("Export", systemImage: "square.and.arrow.down")
+                                    .font(.callout)
                                     .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.bordered)
-                            .help("Export volumes to Downloads")
+                            .iconButtonHover(cornerRadius: 6, padding: 6)
+                            .help("Export volumes to a JSON backup file")
 
                             Button {
                                 withAnimation { showResetConfirmation = true }
                             } label: {
-                                Image(systemName: "trash")
+                                Label("Reset", systemImage: "trash")
+                                    .font(.callout)
                                     .frame(maxWidth: .infinity)
+                                    .foregroundColor(.red)
                             }
-                            .buttonStyle(.bordered)
-                            .tint(.red)
+                            .iconButtonHover(cornerRadius: 6, padding: 6)
+                            .disabled(manager.hasActiveVolumeOperations)
                             .help("Clear all volumes")
                         }
                         .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets())
+                        .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
                     }
 
                     Section(header: Text("Application Info")) {
@@ -102,10 +102,19 @@ struct SettingsView: View {
                                 .scaledToFit()
                                 .frame(width: 48, height: 48)
 
-                                Text("Mounty \(appVersion)").font(.headline)
+                                Text("Mounty").font(.headline)
                                 Text("Version \(appVersion) (\(buildNumber))")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
+
+                                if let repositoryURL {
+                                    Link(destination: repositoryURL) {
+                                        Image(systemName: "link")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .help("View Mounty on GitHub")
+                                }
                             }
                             Spacer()
                         }
@@ -115,16 +124,14 @@ struct SettingsView: View {
                 }
                 .formStyle(.grouped)
                 .scrollContentBackground(.hidden)
-                .scrollDisabled(true)
+                .scrollIndicators(.automatic)
                 .disabled(
                     showResetConfirmation || showQuitConfirmation
-                        || showImportDialog || manager.showSuccess
-                        || manager.showError
+                        || manager.showSuccess || manager.showError
                 )
                 .blur(
                     radius: (showResetConfirmation || showQuitConfirmation
-                        || showImportDialog || manager.showSuccess
-                        || manager.showError) ? 2 : 0
+                        || manager.showSuccess || manager.showError) ? 2 : 0
                 )
             }
 
@@ -138,7 +145,7 @@ struct SettingsView: View {
                     isPresented: $showResetConfirmation
                 ) {
                     manager.clearAllVolumes()
-                    withAnimation { viewMode = .list }
+                    viewMode = .list
                 }
             }
 
@@ -150,18 +157,6 @@ struct SettingsView: View {
                     isPresented: $showQuitConfirmation
                 ) {
                     NSApplication.shared.terminate(nil)
-                }
-            }
-
-            if showImportDialog {
-                InputOverlay(
-                    title: "Import Volumes",
-                    message: "Enter full path to backup file",
-                    placeholder: "~/Downloads/MountyBackup.json",
-                    inputText: $importPath,
-                    isPresented: $showImportDialog
-                ) {
-                    manager.importVolumes(fromPath: importPath)
                 }
             }
 
@@ -184,6 +179,38 @@ struct SettingsView: View {
                 )
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - File Panels
+
+    // NSOpenPanel and NSSavePanel are presented app-modally (no parent window)
+    // because MenuBarExtra windows cannot host sheets. The popover dismisses
+    // naturally when the panel steals focus, but the panel remains fully usable.
+    // NSApp.activate ensures the panel appears in the foreground.
+
+    private func showOpenPanel() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Select a Mounty backup file to import"
+        NSApp.activate(ignoringOtherApps: true)
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            manager.importVolumes(fromURL: url)
+        }
+    }
+
+    private func showSavePanel() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "MountyBackup.json"
+        panel.message = "Choose where to save your Mounty backup"
+        NSApp.activate(ignoringOtherApps: true)
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            manager.exportToURL(url)
+        }
     }
 }

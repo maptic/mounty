@@ -4,7 +4,15 @@ import Foundation
 struct PersistenceService {
     private let keyVolumes = "SavedVolumes"
     private let keyTerminal = "PreferredTerminal"
-    private let defaults = UserDefaults.standard
+    private let keyMinimumLogLevel = "MinimumLogLevel"
+    private let keySortOrder = "SortOrder"
+    private let keySortDirection = "SortDirection"
+    private let defaults: UserDefaults
+
+    /// - Parameter defaults: injectable store; defaults to `.standard` (override in tests).
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
 
     func saveVolumes(_ volumes: [Volume]) {
         if let encoded = try? JSONEncoder().encode(volumes) {
@@ -26,5 +34,30 @@ struct PersistenceService {
     }
     func loadTerminalBundleID() -> String {
         defaults.string(forKey: keyTerminal) ?? "com.apple.Terminal"
+    }
+
+    func saveMinimumLogLevel(_ level: LogEntry.Level) {
+        defaults.set(level.rawValue, forKey: keyMinimumLogLevel)
+    }
+
+    func loadMinimumLogLevel() -> LogEntry.Level {
+        guard let rawValue = defaults.string(forKey: keyMinimumLogLevel) else { return .info }
+        return LogEntry.Level(rawValue: rawValue) ?? .info
+    }
+
+    func saveSortOrder(_ rawValue: String) {
+        defaults.set(rawValue, forKey: keySortOrder)
+    }
+
+    func loadSortOrder() -> String? {
+        defaults.string(forKey: keySortOrder)
+    }
+
+    func saveSortDirection(_ rawValue: String) {
+        defaults.set(rawValue, forKey: keySortDirection)
+    }
+
+    func loadSortDirection() -> String? {
+        defaults.string(forKey: keySortDirection)
     }
 }

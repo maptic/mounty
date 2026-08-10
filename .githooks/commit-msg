@@ -1,0 +1,76 @@
+#!/bin/sh
+#
+# Mounty commit-msg hook:
+#   1. Enforce Conventional Commits.
+#   2. When Generated-by: is present, validate its format.
+#   3. Reject Co-Authored-By: lines that reference AI tools — use Generated-by: instead.
+# Install with: ./scripts/install-hooks.sh
+#
+set -eu
+
+msg_file="$1"
+
+# First non-comment, non-empty line = the subject.
+subject=$(grep -vE '^\s*#' "$msg_file" | grep -vE '^\s*$' | head -n1 || true)
+
+# Allow merge/revert/fixup commits through untouched.
+case "$subject" in
+    "Merge "*|"Revert "*|"fixup!"*|"squash!"*) exit 0 ;;
+esac
+
+# ── 1. Conventional Commits ───────────────────────────────────────────────────
+conventional='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .+'
+
+if ! printf '%s' "$subject" | grep -Eq "$conventional"; then
+    cat >&2 <<'EOF'
+✖ commit-msg: subject is not a valid Conventional Commit.
+
+  Expected: <type>[(scope)][!]: <description>
+  Types:    feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+
+  Examples:
+    feat: add reconnect backoff
+    fix(mount): treat EEXIST as success
+    feat!: drop macOS 25 support
+
+See https://www.conventionalcommits.org/
+EOF
+    exit 1
+fi
+
+body=$(cat "$msg_file")
+
+# ── 2. Validate Generated-by: format when present ────────────────────────────
+if printf '%s' "$body" | grep -qiE '^Generated-by:'; then
+    # Must be exactly: Generated-by: <non-empty-model-id>
+    if ! printf '%s' "$body" | grep -qE '^Generated-by: [a-zA-Z0-9._+-]+$'; then
+        cat >&2 <<'EOF'
+✖ commit-msg: malformed Generated-by: trailer.
+
+  Expected:  Generated-by: <model-id>
+  Examples:  Generated-by: claude-sonnet-4-6
+             Generated-by: gpt-5
+             Generated-by: gemini-2.5-pro
+
+  The model id must be a single token on the same line, no extra text.
+EOF
+        exit 1
+    fi
+fi
+
+# ── 3. Reject Co-Authored-By: from AI tools ──────────────────────────────────
+if printf '%s' "$body" | grep -qiE '^Co-Authored-By:.*\b(Claude|GPT|Copilot|Gemini|Codex|Cursor|OpenAI|Anthropic)\b'; then
+    cat >&2 <<'EOF'
+✖ commit-msg: AI Co-Authored-By: trailer found. Use Generated-by: instead.
+
+  The human user is the commit author. Record the model as a tool, not a co-author:
+
+    Generated-by: claude-sonnet-4-6
+
+  Remove the Co-Authored-By: line and add Generated-by: instead.
+  See CONTRIBUTING.md for details.
+EOF
+    exit 1
+fi
+
+exit 0

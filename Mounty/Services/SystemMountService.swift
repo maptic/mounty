@@ -11,10 +11,10 @@ struct SystemMountService {
     /// Fetches system mounts via `getmntinfo` (MNT_NOWAIT).
     nonisolated static func getSystemMounts() -> [MountPoint] {
         var mounts: [MountPoint] = []
-        var mntbuf: UnsafeMutablePointer<statfs>? = nil
+        var mntbuf: UnsafeMutablePointer<statfs>?
         let count = getmntinfo(&mntbuf, MNT_NOWAIT)
 
-        if count > 0, let mntbuf = mntbuf {
+        if count > 0, let mntbuf {
             for i in 0..<Int(count) {
                 let mnt = mntbuf[i]
                 let path = withUnsafePointer(to: mnt.f_mntonname) {
@@ -35,7 +35,7 @@ struct SystemMountService {
         return mounts
     }
 
-    /// Resolves local mount path from Filer configuration.
+    /// Resolves a local mount path from Mounty's volume configuration.
     nonisolated static func findMountPath(
         for volume: Volume,
         in mounts: [MountPoint]
@@ -43,38 +43,40 @@ struct SystemMountService {
         guard let configUrl = URL(string: volume.serverAddress) else {
             return nil
         }
-        let configPath = configUrl.path.lowercased()
-        let configHost = configUrl.host?.lowercased() ?? "unknown"
-
-        for mount in mounts {
-            let source = mount.source.lowercased()
-            if source.contains(configHost) {
-                if configPath.count > 1 {
-                    if source.hasSuffix(configPath) { return mount.path }
-                } else {
-                    return mount.path
-                }
-            }
-        }
-        return nil
+        guard let host = configUrl.host else { return nil }
+        return findMountPath(host: host, path: configUrl.path, in: mounts)
     }
 
     /// Checks if a network URL is already mounted.
     nonisolated static func findMountPath(forURL url: URL) -> String? {
-        let mounts = getSystemMounts()
-        let host = url.host?.lowercased() ?? "unknown"
-        let path = url.path.lowercased()
+        guard let host = url.host else { return nil }
+        return findMountPath(host: host, path: url.path, in: getSystemMounts())
+    }
 
-        for mount in mounts {
-            let source = mount.source.lowercased()
-            if source.contains(host) {
-                if path.count > 1 {
-                    if source.hasSuffix(path) { return mount.path }
-                } else {
-                    return mount.path
-                }
-            }
-        }
-        return nil
+    private nonisolated static func findMountPath(
+        host: String,
+        path: String,
+        in mounts: [MountPoint]
+    ) -> String? {
+        let normalizedHost = host.lowercased()
+        let normalizedPath = path.lowercased()
+        return mounts.first { mount in
+            guard extractHost(from: mount.source) == normalizedHost else { return false }
+            return normalizedPath.count <= 1
+                || mount.source.lowercased().hasSuffix(normalizedPath)
+        }?.path
+    }
+
+    /// Extracts the hostname from a kernel mount source of the form
+    /// "//[domain;user@]host/share". Uses string splitting rather than URL
+    /// parsing to correctly handle SMB sources with "domain;user@host" userinfo
+    /// that Foundation's URL parser may reject.
+    private nonisolated static func extractHost(from source: String) -> String? {
+        guard source.hasPrefix("//") else { return nil }
+        let withoutSlashes = String(source.dropFirst(2))
+        // Take the segment after the last "@" to strip any "domain;user@" prefix.
+        let afterAt = withoutSlashes.components(separatedBy: "@").last ?? withoutSlashes
+        let host = afterAt.components(separatedBy: "/").first ?? afterAt
+        return host.isEmpty ? nil : host.lowercased()
     }
 }

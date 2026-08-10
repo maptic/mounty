@@ -1,16 +1,20 @@
 import SwiftUI
 
 struct MainListView: View {
-    @ObservedObject var manager: VolumeManager
+    @Bindable var manager: VolumeManager
     @Binding var viewMode: AppViewMode
 
     private let rowHeight: CGFloat = 50
-    private let maxVisibleRows = 5
+    private let searchHeight: CGFloat = 44
+    private let minVisibleRows = 3
+    private let maxVisibleRowsCap = 12
+    @AppStorage("mounty.maxVisibleRows") private var maxVisibleRows: Int = 5
+
+    @State private var isResizeHovered = false
+    @State private var dragStartRows = 0
 
     private var listHeight: CGFloat {
-        let count = manager.filteredAndSortedVolumes.count
-        if count == 0 { return 120 }
-        return min(CGFloat(count), CGFloat(maxVisibleRows)) * rowHeight
+        CGFloat(maxVisibleRows) * rowHeight
     }
 
     private var isSearchVisible: Bool {
@@ -19,34 +23,33 @@ struct MainListView: View {
 
     var body: some View {
         ZStack {
-            // Main Content Layer
             VStack(spacing: 0) {
-                // Hidden shortcut trigger
-                Button("") { withAnimation { manager.showSearch.toggle() } }
-                    .keyboardShortcut("f", modifiers: .command)
-                    .frame(width: 0, height: 0)
-                    .opacity(0)
-
                 HeaderView(
                     title: "Mounty",
                     showLogo: true,
                     trailingAction: { viewMode = .settings },
                     trailingIcon: ("gearshape.fill", .secondary),
-                    trailingHelp: "Settings"
+                    trailingHelp: "Settings",
+                    trailingAction2: { manager.showSearch.toggle() },
+                    trailingIcon2: (
+                        "magnifyingglass", isSearchVisible ? .accentColor : .secondary
+                    ),
+                    trailingHelp2: "Search Volumes (⌘F)",
+                    trailingShortcut2: KeyboardShortcut("f", modifiers: .command)
                 )
                 .transaction { $0.animation = nil }
 
-                // Search Bar - Background matches Window Header
-                if isSearchVisible {
-                    VStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    // Search and list share a fixed-height region so toggling search
+                    // cannot move the resize handle or footer.
+                    if isSearchVisible {
                         HStack(alignment: .center) {
                             TextField("Search...", text: $manager.searchText)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(height: 28)
 
                             Menu {
-                                Picker("Sort By", selection: $manager.sortOrder)
-                                {
+                                Picker("Sort By", selection: $manager.sortOrder) {
                                     ForEach(
                                         VolumeManager.SortOrder.allCases,
                                         id: \.self
@@ -68,8 +71,7 @@ struct MainListView: View {
                                     ? .descending : .ascending
                             } label: {
                                 Image(
-                                    systemName: manager.sortDirection
-                                        == .ascending
+                                    systemName: manager.sortDirection == .ascending
                                         ? "arrow.down" : "arrow.up"
                                 )
                             }
@@ -78,61 +80,108 @@ struct MainListView: View {
                             .help("Toggle Sort Direction")
                         }
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .frame(height: searchHeight)
+                        .frame(maxWidth: .infinity)
+                        .background(Color(NSColor.windowBackgroundColor))
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .zIndex(1)
                     }
-                    .background(Color(NSColor.windowBackgroundColor))
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(1)
-                }
 
-                Divider()
+                    Divider()
 
-                // List
-                if manager.filteredAndSortedVolumes.isEmpty {
-                    VStack {
-                        Spacer()
-                        Text(
-                            manager.volumes.isEmpty
-                                ? "No Volumes Configured"
-                                : "No Matching Volumes"
-                        )
-                        .foregroundColor(.secondary)
-                        Spacer()
-                    }.frame(height: listHeight)
-                } else {
-                    ScrollViewReader { _ in
+                    // List content
+                    if manager.filteredAndSortedVolumes.isEmpty {
+                        VStack(spacing: 8) {
+                            Spacer()
+                            Image(
+                                systemName: manager.volumes.isEmpty
+                                    ? "externaldrive.badge.plus"
+                                    : "magnifyingglass"
+                            )
+                            .font(.system(size: 28))
+                            .foregroundColor(.secondary.opacity(0.5))
+                            Text(
+                                manager.volumes.isEmpty
+                                    ? "No Volumes Configured"
+                                    : "No Matching Volumes"
+                            )
+                            .font(.callout)
+                            .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .frame(height: listHeight - (isSearchVisible ? searchHeight : 0))
+                    } else {
                         ScrollView {
                             VStack(spacing: 0) {
-                                ForEach(manager.filteredAndSortedVolumes) {
-                                    volume in
-                                    VolumeRow(volume: volume, manager: manager)
-                                        .frame(height: rowHeight)
+                                ForEach(manager.filteredAndSortedVolumes) { volume in
+                                    VolumeRow(
+                                        volume: volume, manager: manager,
+                                        onEdit: {
+                                            viewMode = .edit(volume)
+                                        }
+                                    )
+                                    .frame(height: rowHeight)
                                     Divider()
                                 }
                             }
                         }
-                        .frame(height: listHeight)
+                        .frame(height: listHeight - (isSearchVisible ? searchHeight : 0))
                         .scrollDisabled(
-                            manager.filteredAndSortedVolumes.count
-                                <= maxVisibleRows
+                            manager.filteredAndSortedVolumes.count <= maxVisibleRows
                         )
                     }
                 }
+                .frame(height: listHeight, alignment: .top)
+                .clipped()
 
-                Divider()
+                // Resize handle — drag vertically to reveal more or fewer rows.
+                // Shows a grab pill on hover; the resize cursor confirms the gesture.
+                ZStack {
+                    Color.clear.frame(height: 8)
+                    Divider()
+                    if isResizeHovered || dragStartRows != 0 {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.secondary.opacity(0.45))
+                            .frame(width: 36, height: 3)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onHover { hovering in
+                    isResizeHovered = hovering
+                    if hovering {
+                        NSCursor.resizeUpDown.push()
+                    } else if dragStartRows == 0 {
+                        NSCursor.pop()
+                    }
+                }
+                .gesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { value in
+                            if dragStartRows == 0 { dragStartRows = maxVisibleRows }
+                            let delta = Int(round(value.translation.height / rowHeight))
+                            maxVisibleRows = min(
+                                max(minVisibleRows, dragStartRows + delta),
+                                maxVisibleRowsCap
+                            )
+                        }
+                        .onEnded { _ in
+                            dragStartRows = 0
+                            if !isResizeHovered { NSCursor.pop() }
+                        }
+                )
 
-                // Footer
+                // Footer — maxWidth: .infinity guarantees the Spacer always fills
+                // the same distance regardless of what the list content does.
                 HStack {
                     Button {
-                        withAnimation { manager.showSearch.toggle() }
+                        viewMode = .logs
                     } label: {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(
-                                isSearchVisible ? .accentColor : .secondary
-                            )
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .help("Search Volumes (⌘F)")
+                    .iconButtonHover()
+                    .help("Logs")
 
                     Spacer()
 
@@ -145,13 +194,16 @@ struct MainListView: View {
                     .controlSize(.small)
                     .help("Add Volume")
                 }
-                .padding(12)
+                .appFooterLayout()
                 .background(Color(NSColor.windowBackgroundColor))
             }
+            // Declarative animation: fires reliably on every isSearchVisible change
+            // because it's value-driven, not action-driven. The HeaderView's own
+            // .transaction suppressor prevents it from animating along.
+            .animation(.easeOut(duration: 0.18), value: isSearchVisible)
             .blur(radius: manager.showError ? 2 : 0)
-            .disabled(manager.showError)
+            .disabled(manager.showError || manager.isClearingVolumes)
 
-            // Overlay Layer
             if manager.showError {
                 AlertOverlay(
                     title: "Error",
@@ -161,6 +213,6 @@ struct MainListView: View {
                 )
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

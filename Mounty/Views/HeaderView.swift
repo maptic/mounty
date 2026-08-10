@@ -8,6 +8,14 @@ struct HeaderView: View {
     var trailingAction: (() -> Void)? = nil
     var trailingIcon: (String, Color)? = nil
     var trailingHelp: String = ""
+    // Optional second trailing button — rendered to the LEFT of the primary one.
+    var trailingAction2: (() -> Void)? = nil
+    var trailingIcon2: (String, Color)? = nil
+    var trailingHelp2: String = ""
+    var trailingShortcut2: KeyboardShortcut? = nil
+
+    // When two trailing buttons are present, both sides widen to keep the title centered.
+    private var sideWidth: CGFloat { trailingAction2 != nil ? 64 : 32 }
 
     var body: some View {
         HStack {
@@ -16,19 +24,18 @@ struct HeaderView: View {
                 if let backAction = backAction {
                     Button(action: backAction) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.accentColor)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.accentColor)
+                    .iconButtonHover()
                 } else if showLogo {
-                    // Transparent Asset "Logo"
                     Image("Logo")
                         .resizable()
                         .scaledToFit()
                         .cornerRadius(4)
                 }
             }
-            .frame(width: 32, height: 32, alignment: .leading)
+            .frame(width: sideWidth, height: 32, alignment: .leading)
 
             Spacer()
 
@@ -40,23 +47,30 @@ struct HeaderView: View {
 
             Spacer()
 
-            // Trailing
-            ZStack(alignment: .trailing) {
+            // Trailing — second button (if any) sits to the left of the primary.
+            HStack(spacing: 0) {
+                if let action2 = trailingAction2, let icon2 = trailingIcon2 {
+                    Button(action: action2) {
+                        Image(systemName: icon2.0)
+                            .font(.system(size: 15))
+                            .foregroundColor(icon2.1)
+                    }
+                    .iconButtonHover()
+                    .keyboardShortcut(trailingShortcut2)
+                    .help(trailingHelp2)
+                }
                 if let action = trailingAction, let icon = trailingIcon {
                     Button(action: action) {
                         Image(systemName: icon.0)
-                            .font(.system(size: 16))
+                            .font(.system(size: 15))
                             .foregroundColor(icon.1)
                     }
-                    .buttonStyle(.plain)
+                    .iconButtonHover()
                     .help(trailingHelp)
                 }
             }
-            // Matches leading size to keep title centered
-            .frame(width: 32, height: 32, alignment: .trailing)
+            .frame(width: sideWidth, height: 32, alignment: .trailing)
         }
-        // Reduced vertical padding (12 -> 10) to compensate for larger icon
-        // Total height remains: 32 + 10 + 10 = 52 (Same as previous 28 + 12 + 12)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(.regularMaterial)

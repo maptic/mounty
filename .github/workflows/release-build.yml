@@ -1,0 +1,140 @@
+name: Release Build
+
+# Fires when release-please's PR is merged and it publishes a GitHub Release.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-dmg:
+    runs-on: macos-latest
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+      # 'true' only when Developer-ID signing secrets are configured.
+      HAS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Derive version
+        id: ver
+        run: echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build (Release, unsigned)
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          xcodebuild \
+            -project Mounty.xcodeproj \
+            -scheme Mounty \
+            -configuration Release \
+            -derivedDataPath build \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build
+          echo "APP=build/Build/Products/Release/Mounty.app" >> "$GITHUB_ENV"
+
+      # -------- Signing --------
+      # Notarized, Developer-ID signing runs ONLY if the signing secrets exist.
+      # Otherwise we ad-hoc sign (app still runs after the one-time Gatekeeper bypass
+      # documented in the README).
+      - name: Ad-hoc sign
+        if: env.HAS_SIGNING != 'true'
+        run: codesign --force --deep --sign - "$APP"
+
+      - name: Developer-ID sign + notarize
+        if: env.HAS_SIGNING == 'true'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          AC_APPLE_ID: ${{ secrets.AC_APPLE_ID }}
+          AC_TEAM_ID: ${{ secrets.AC_TEAM_ID }}
+          AC_PASSWORD: ${{ secrets.AC_PASSWORD }}
+        run: |
+          # Import cert into a temporary keychain.
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PWD=$(openssl rand -base64 24)
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MACOS_CERTIFICATE_PWD" \
+            -T /usr/bin/codesign
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" "$KEYCHAIN"
+          # Sign with hardened runtime.
+          codesign --force --deep --options runtime --timestamp \
+            --sign "$MACOS_SIGN_IDENTITY" "$APP"
+          # Notarize the .app (zipped) then staple.
+          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/Mounty.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/Mounty.zip" \
+            --apple-id "$AC_APPLE_ID" --team-id "$AC_TEAM_ID" --password "$AC_PASSWORD" --wait
+          xcrun stapler staple "$APP"
+
+      # -------- Package --------
+      - name: Create DMG
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          STAGE="$RUNNER_TEMP/dmg"
+          rm -rf "$STAGE" && mkdir -p "$STAGE"
+          cp -R "$APP" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "Mounty" -srcfolder "$STAGE" -ov -format UDZO \
+            "Mounty-$VERSION.dmg"
+          shasum -a 256 "Mounty-$VERSION.dmg" | tee "Mounty-$VERSION.dmg.sha256"
+
+      - name: Upload assets to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          gh release upload "$TAG" \
+            "Mounty-$VERSION.dmg" "Mounty-$VERSION.dmg.sha256" --clobber
+
+      # -------- Homebrew cask --------
+      - name: Update Homebrew cask
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "HOMEBREW_TAP_TOKEN not set; skipping cask update."
+            exit 0
+          fi
+          SHA=$(shasum -a 256 "Mounty-$VERSION.dmg" | awk '{print $1}')
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/maptic/homebrew-tap.git" tap
+          mkdir -p tap/Casks
+          cat > tap/Casks/mounty.rb <<EOF
+          cask "mounty" do
+            version "$VERSION"
+            sha256 "$SHA"
+
+            url "https://github.com/maptic/mounty/releases/download/v#{version}/Mounty-#{version}.dmg"
+            name "Mounty"
+            desc "Menu-bar app that keeps SMB network shares mounted automatically"
+            homepage "https://github.com/maptic/mounty"
+
+            depends_on macos: ">= :tahoe"
+
+            app "Mounty.app"
+
+            zap trash: "~/Library/Preferences/ch.maptic.Mounty.plist"
+          end
+          EOF
+
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/mounty.rb
+          git commit -m "chore: update mounty to $VERSION"
+          git push

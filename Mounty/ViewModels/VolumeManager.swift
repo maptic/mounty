@@ -454,12 +454,16 @@ final class VolumeManager {
         disableAutomount(for: volume)
         guard let path = mountPaths[volume.id] else { return }
 
-        mountPaths.removeValue(forKey: volume.id)
         busyVolumes.insert(volume.id)
         log("Disconnecting \(volume.name)")
 
         Task {
-            await MountService.unmount(path: path)
+            guard await MountService.unmount(path: path) else {
+                self.reportUnmountFailure(for: volume, action: "Disconnect")
+                await self.refreshState()
+                return
+            }
+            self.mountPaths.removeValue(forKey: volume.id)
             self.busyVolumes.remove(volume.id)
             self.log("Disconnected: \(volume.name)")
             await self.refreshState()
@@ -488,12 +492,26 @@ final class VolumeManager {
     }
 
     func removeVolume(_ id: UUID) {
-        if let v = volumes.first(where: { $0.id == id }) {
-            log("Removed volume: \(v.name)")
+        guard let volume = volumes.first(where: { $0.id == id }) else { return }
+        guard let path = mountPaths[id] else {
+            removeVolumeConfiguration(id: id, name: volume.name)
+            Task { await refreshState() }
+            return
         }
-        volumes.removeAll { $0.id == id }
-        storage.saveVolumes(volumes)
-        Task { await refreshState() }
+
+        busyVolumes.insert(id)
+        log("Removing volume: \(volume.name)")
+        Task {
+            guard await MountService.unmount(path: path) else {
+                self.reportUnmountFailure(for: volume, action: "Remove")
+                await self.refreshState()
+                return
+            }
+            self.mountPaths.removeValue(forKey: id)
+            self.busyVolumes.remove(id)
+            self.removeVolumeConfiguration(id: id, name: volume.name)
+            await self.refreshState()
+        }
     }
 
     func editVolume(id: UUID, name: String, serverAddress: String) {
@@ -501,20 +519,40 @@ final class VolumeManager {
         let old = volumes[idx]
         let addressChanged = old.serverAddress != serverAddress
 
-        volumes[idx].name = name
-        volumes[idx].serverAddress = serverAddress
-        storage.saveVolumes(volumes)
-        log("Updated volume: \(name)")
+        if !addressChanged {
+            volumes[idx].name = name
+            storage.saveVolumes(volumes)
+            log("Updated volume: \(name)")
+            return
+        }
 
-        guard addressChanged, let oldPath = mountPaths[id] else { return }
+        guard let oldPath = mountPaths[id] else {
+            volumes[idx].name = name
+            volumes[idx].serverAddress = serverAddress
+            storage.saveVolumes(volumes)
+            log("Updated volume: \(name)")
+            return
+        }
 
         // Unmount the old connection by its recorded path, then remount at the new address.
         // Using oldPath (not the new address) ensures we disconnect the right kernel mount
         // even if the new address points to a different share entirely.
-        mountPaths.removeValue(forKey: id)
         busyVolumes.insert(id)
         Task {
-            await MountService.unmount(path: oldPath)
+            guard await MountService.unmount(path: oldPath) else {
+                self.reportUnmountFailure(for: old, action: "Reconnect")
+                await self.refreshState()
+                return
+            }
+            self.mountPaths.removeValue(forKey: id)
+            guard let currentIndex = self.volumes.firstIndex(where: { $0.id == id }) else {
+                self.busyVolumes.remove(id)
+                return
+            }
+            self.volumes[currentIndex].name = name
+            self.volumes[currentIndex].serverAddress = serverAddress
+            self.storage.saveVolumes(self.volumes)
+            self.log("Updated volume: \(name)")
             guard let url = URL(string: serverAddress) else {
                 self.busyVolumes.remove(id)
                 return
@@ -530,14 +568,50 @@ final class VolumeManager {
                 self.showError = true
             }
             self.busyVolumes.remove(id)
+            await self.refreshState()
         }
     }
 
     func clearAllVolumes() {
-        log("Cleared all volumes")
-        volumes.removeAll()
+        let configuredVolumes = volumes
+        let mountedVolumes = configuredVolumes.compactMap { volume in
+            mountPaths[volume.id].map { (volume, $0) }
+        }
+        for (volume, _) in mountedVolumes { busyVolumes.insert(volume.id) }
+
+        Task {
+            var retainedIDs = Set<UUID>()
+            for (volume, path) in mountedVolumes {
+                guard await MountService.unmount(path: path) else {
+                    retainedIDs.insert(volume.id)
+                    self.reportUnmountFailure(for: volume, action: "Clear")
+                    continue
+                }
+                self.mountPaths.removeValue(forKey: volume.id)
+                self.busyVolumes.remove(volume.id)
+            }
+            self.volumes.removeAll { !retainedIDs.contains($0.id) }
+            self.storage.saveVolumes(self.volumes)
+            if retainedIDs.isEmpty {
+                self.log("Cleared all volumes")
+            } else {
+                self.log("Clear retained \(retainedIDs.count) mounted volume(s)", level: .warning)
+            }
+            await self.refreshState()
+        }
+    }
+
+    private func removeVolumeConfiguration(id: UUID, name: String) {
+        volumes.removeAll { $0.id == id }
         storage.saveVolumes(volumes)
-        Task { await refreshState() }
+        log("Removed volume: \(name)")
+    }
+
+    private func reportUnmountFailure(for volume: Volume, action: String) {
+        busyVolumes.remove(volume.id)
+        lastError = "Could not disconnect \(volume.name). The share remains mounted."
+        showError = true
+        log("\(action) failed; \(volume.name) remains mounted", level: .error)
     }
 
     func toggleAutomount(_ id: UUID) {

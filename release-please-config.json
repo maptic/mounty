@@ -8,7 +8,7 @@
       "bump-minor-pre-major": false,
       "draft": false,
       "prerelease": false,
-      "include-v-in-tag": true,
+      "include-v-in-tag": false,
       "include-component-in-tag": false,
       "extra-files": [
         "version.txt"

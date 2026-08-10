@@ -16,7 +16,8 @@ steps: cutting a release must build the DMG, attach it to the GitHub Release, an
 - [ ] Merging the release-please PR builds and attaches the DMG — previously the release build never
       ran, because a release created with the default `GITHUB_TOKEN` emits no `release: published`
       event.
-- [ ] Release tags are `vX.Y.Z`, matching the download URL the cask interpolates.
+- [ ] Release tags are bare semver (`1.2.1`), matching the download URL the cask interpolates, and
+      the existing `mounty-v1.2.0` tag and release are renamed to that scheme.
 - [ ] The release build asks `maptic/homebrew-tap` to bump the cask via a `cask-release`
       `repository_dispatch`, and skips that step (without failing) when `HOMEBREW_TAP_TOKEN` is absent.
 - [ ] `release-build.yml` can be re-run by hand for an existing tag.

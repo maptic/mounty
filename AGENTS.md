@@ -89,7 +89,7 @@ Versioning and releases are **fully automated** by `release-please` from commit 
 ### Release pipeline
 
 ```
-push to main → release-please PR → merge → tag vX.Y.Z + GitHub Release
+push to main → release-please PR → merge → tag X.Y.Z + GitHub Release
                                              │
                                              ├─ release-build.yml: DMG (+ notarization) → release assets
                                              └─ repository_dispatch "cask-release" → maptic/homebrew-tap
@@ -98,7 +98,10 @@ push to main → release-please PR → merge → tag vX.Y.Z + GitHub Release
 
 `release-build.yml` is **called by** `release-please.yml`, not triggered by the `release: published`
 event — a release created with the default `GITHUB_TOKEN` does not emit that event. To re-package a
-tag by hand: `gh workflow run release-build.yml -f tag=vX.Y.Z`.
+tag by hand: `gh workflow run release-build.yml -f tag=X.Y.Z`.
+
+Tags are bare semver — `1.2.3`, not `v1.2.3` or `mounty-v1.2.3`. The repository holds one app, so a
+component prefix carries no information and only makes release URLs redundant.
 
 The cask bump needs `HOMEBREW_TAP_TOKEN` (a fine-grained PAT with `contents: write` on
 `maptic/homebrew-tap`) in this repository's secrets; without it the release still succeeds and only

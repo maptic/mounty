@@ -10,13 +10,13 @@ on:
   workflow_call:
     inputs:
       tag:
-        description: Release tag to build, e.g. v1.2.3
+        description: Release tag to build, e.g. 1.2.3
         required: true
         type: string
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to build, e.g. v1.2.3
+        description: Release tag to build, e.g. 1.2.3
         required: true
         type: string
 
@@ -42,6 +42,7 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      # Tags are bare semver ("1.2.3"); the strip only guards a hand-typed "v".
       - name: Derive version
         id: ver
         run: echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"

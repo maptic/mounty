@@ -4,6 +4,8 @@ Newest stories first. Statuses: `OPEN`, `IN_PROGRESS`, `CLOSED`.
 
 | ID | Type | Story | Status | Date |
 | --- | --- | --- | --- | --- |
+| [022](./022-documentation-source-artwork.md) | docs | Documentation source artwork | CLOSED | 2026-08-10 |
+| [021](./021-readme-logo-alignment.md) | fix | README logo alignment | CLOSED | 2026-08-10 |
 | [020](./020-repository-link-and-asset-organization.md) | feat | Repository link and asset organization | CLOSED | 2026-08-10 |
 | [019](./019-copy-mounted-path.md) | feat | Copy mounted path | CLOSED | 2026-08-10 |
 | [018](./018-settings-scrolling-and-dialog-presentation.md) | fix | Settings scrolling and dialog presentation | CLOSED | 2026-08-10 |

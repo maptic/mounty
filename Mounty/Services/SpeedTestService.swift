@@ -24,13 +24,6 @@ struct SpeedTestService {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    // defer runs in all exit paths (success, throw, early return)
-                    // so the test file is always removed on the server.
-                    // The only exception is a hard process crash (SIGKILL); in that
-                    // case a single hidden file (.mounty_speed_<UUID>) is left but
-                    // is harmless — it will not overwrite or shadow any user data.
-                    defer { removeWithRetry(at: testURL) }
-
                     let data = Data(count: byteCount)
 
                     // --- Write ---
@@ -43,9 +36,7 @@ struct SpeedTestService {
                     let writeDescriptor = Darwin.open(path, O_RDONLY)
                     guard writeDescriptor >= 0 else { throw posixError() }
                     defer { Darwin.close(writeDescriptor) }
-                    guard Darwin.fcntl(writeDescriptor, F_FULLFSYNC) == 0 else {
-                        throw posixError()
-                    }
+                    try synchronize(writeDescriptor)
                     let writeDuration = max(Date().timeIntervalSince(writeStart), 0.001)
 
                     // --- Read ---
@@ -55,9 +46,7 @@ struct SpeedTestService {
                     let readDescriptor = Darwin.open(path, O_RDONLY)
                     guard readDescriptor >= 0 else { throw posixError() }
                     defer { Darwin.close(readDescriptor) }
-                    guard Darwin.fcntl(readDescriptor, F_NOCACHE, 1) == 0 else {
-                        throw posixError()
-                    }
+                    try disableCaching(readDescriptor)
 
                     let readStart = Date()
                     var buffer = [UInt8](repeating: 0, count: byteCount)
@@ -92,6 +81,11 @@ struct SpeedTestService {
                 } catch {
                     continuation.resume(throwing: error)
                 }
+
+                // Resume the caller before cleanup. Removing a file from an
+                // unavailable SMB share can block or retry, but must never delay
+                // publishing the result back to the UI.
+                removeWithRetry(at: testURL)
             }
         }
     }
@@ -109,8 +103,31 @@ struct SpeedTestService {
         }
     }
 
-    private nonisolated static func posixError() -> NSError {
-        NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    private nonisolated static func synchronize(_ descriptor: Int32) throws {
+        if Darwin.fcntl(descriptor, F_FULLFSYNC) == 0 { return }
+
+        let fullSyncError = errno
+        guard isUnsupportedFileControl(fullSyncError) else {
+            throw posixError(code: fullSyncError)
+        }
+        guard Darwin.fsync(descriptor) == 0 else { throw posixError() }
+    }
+
+    private nonisolated static func disableCaching(_ descriptor: Int32) throws {
+        if Darwin.fcntl(descriptor, F_NOCACHE, 1) == 0 { return }
+
+        let noCacheError = errno
+        guard isUnsupportedFileControl(noCacheError) else {
+            throw posixError(code: noCacheError)
+        }
+    }
+
+    private nonisolated static func isUnsupportedFileControl(_ code: Int32) -> Bool {
+        code == ENOTSUP || code == EINVAL || code == ENOTTY
+    }
+
+    private nonisolated static func posixError(code: Int32 = errno) -> NSError {
+        NSError(domain: NSPOSIXErrorDomain, code: Int(code))
     }
 
     private enum SpeedTestError: LocalizedError {

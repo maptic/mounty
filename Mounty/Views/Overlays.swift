@@ -46,6 +46,12 @@ extension View {
     func iconButtonHover(cornerRadius: CGFloat = 5, padding: CGFloat = 4) -> some View {
         buttonStyle(IconHoverButtonStyle(cornerRadius: cornerRadius, padding: padding))
     }
+
+    func appFooterLayout() -> some View {
+        frame(height: 24)
+            .padding(12)
+            .frame(maxWidth: .infinity)
+    }
 }
 
 // MARK: - Status Alert Overlay

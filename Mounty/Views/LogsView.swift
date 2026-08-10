@@ -11,7 +11,7 @@ struct LogsView: View {
     var body: some View {
         VStack(spacing: 0) {
             HeaderView(
-                title: "App Logs",
+                title: "Logs",
                 backAction: { viewMode = .list }
             )
 
@@ -106,8 +106,7 @@ struct LogsView: View {
                 .disabled(visibleEntries.isEmpty)
                 .help("Copy visible log entries to clipboard")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .appFooterLayout()
         }
         .fixedSize(horizontal: false, vertical: true)
     }

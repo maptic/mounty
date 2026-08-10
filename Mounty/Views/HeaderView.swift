@@ -12,6 +12,7 @@ struct HeaderView: View {
     var trailingAction2: (() -> Void)? = nil
     var trailingIcon2: (String, Color)? = nil
     var trailingHelp2: String = ""
+    var trailingShortcut2: KeyboardShortcut? = nil
 
     // When two trailing buttons are present, both sides widen to keep the title centered.
     private var sideWidth: CGFloat { trailingAction2 != nil ? 64 : 32 }
@@ -55,6 +56,7 @@ struct HeaderView: View {
                             .foregroundColor(icon2.1)
                     }
                     .iconButtonHover()
+                    .keyboardShortcut(trailingShortcut2)
                     .help(trailingHelp2)
                 }
                 if let action = trailingAction, let icon = trailingIcon {

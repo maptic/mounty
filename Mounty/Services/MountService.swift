@@ -192,33 +192,35 @@ struct MountService {
 
     // MARK: - UI Actions
 
-    @MainActor
-    static func openInFinder(path: String) {
-        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+    nonisolated static func openInFinder(path: String) {
+        Task.detached(priority: .userInitiated) {
+            NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        }
     }
 
-    @MainActor
-    static func openInTerminal(path: String, with bundleId: String? = nil) {
-        let url = URL(fileURLWithPath: path)
-        let terminalId = bundleId ?? "com.apple.Terminal"
+    nonisolated static func openInTerminal(path: String, with bundleId: String? = nil) {
+        Task.detached(priority: .userInitiated) {
+            let url = URL(fileURLWithPath: path)
+            let terminalId = bundleId ?? "com.apple.Terminal"
 
-        guard
-            let appUrl = NSWorkspace.shared.urlForApplication(
-                withBundleIdentifier: terminalId
+            guard
+                let appUrl = NSWorkspace.shared.urlForApplication(
+                    withBundleIdentifier: terminalId
+                )
+            else {
+                NSWorkspace.shared.open(url)
+                return
+            }
+
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = true
+            NSWorkspace.shared.open(
+                [url],
+                withApplicationAt: appUrl,
+                configuration: config,
+                completionHandler: nil
             )
-        else {
-            NSWorkspace.shared.open(url)
-            return
         }
-
-        let config = NSWorkspace.OpenConfiguration()
-        config.activates = true
-        NSWorkspace.shared.open(
-            [url],
-            withApplicationAt: appUrl,
-            configuration: config,
-            completionHandler: nil
-        )
     }
 
     // MARK: - Login Item

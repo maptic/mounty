@@ -18,7 +18,7 @@ final class VolumeManager {
     var showSearch = false
 
     // Preferences
-    var launchAtLogin: Bool = MountService.isLoginItemEnabled()
+    var launchAtLogin = false
     var preferredTerminal: String
     var availableTerminals: [(name: String, id: String)] = []
 
@@ -62,6 +62,7 @@ final class VolumeManager {
         startLogObservation()
         startEventObservation()
         refreshInstalledTerminals()
+        refreshLoginItemStatus()
 
         Task {
             await refreshState()
@@ -154,25 +155,40 @@ final class VolumeManager {
         isRunningSpeedTest = true
         speedTestResult = nil
         speedTestError = nil
-        log("Speed test started for \(volume.name)")
+        let volumeID = volume.id
+        let volumeName = volume.name
 
-        Task {
+        Task.detached(priority: .userInitiated) { [weak self] in
+            AppLogger.log(
+                "Speed test started for \(volumeName)",
+                source: .manager
+            )
             do {
                 let result = try await SpeedTestService.measure(at: path)
-                self.speedTestResult = result
-                self.log(
-                    "Speed test (\(volume.name)): "
+                AppLogger.log(
+                    "Speed test (\(volumeName)): "
                         + "write \(String(format: "%.1f", result.writeSpeed)) MB/s, "
-                        + "read \(String(format: "%.1f", result.readSpeed)) MB/s"
+                        + "read \(String(format: "%.1f", result.readSpeed)) MB/s",
+                    source: .manager
                 )
+                await MainActor.run {
+                    guard self?.speedTestVolumeId == volumeID else { return }
+                    self?.speedTestResult = result
+                    self?.isRunningSpeedTest = false
+                }
             } catch {
-                self.speedTestError = error.localizedDescription
-                self.log(
-                    "Speed test failed for \(volume.name): \(error.localizedDescription)",
-                    level: .error
+                let message = error.localizedDescription
+                AppLogger.log(
+                    "Speed test failed for \(volumeName): \(message)",
+                    level: .error,
+                    source: .manager
                 )
+                await MainActor.run {
+                    guard self?.speedTestVolumeId == volumeID else { return }
+                    self?.speedTestError = message
+                    self?.isRunningSpeedTest = false
+                }
             }
-            self.isRunningSpeedTest = false
         }
     }
 
@@ -379,6 +395,13 @@ final class VolumeManager {
                     self.preferredTerminal = "com.apple.Terminal"
                 }
             }
+        }
+    }
+
+    private func refreshLoginItemStatus() {
+        Task.detached(priority: .utility) { [weak self] in
+            let isEnabled = MountService.isLoginItemEnabled()
+            await MainActor.run { self?.launchAtLogin = isEnabled }
         }
     }
 

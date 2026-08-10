@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.1](https://github.com/maptic/mounty/compare/1.2.0...1.2.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* publish release artifacts and the Homebrew cask ([8af619f](https://github.com/maptic/mounty/commit/8af619fd0591f91f4f5ae1efc9b69bf92773a74b))
+* publish release artifacts and the Homebrew cask ([05f64ac](https://github.com/maptic/mounty/commit/05f64ac45ea8138e5d2e6717a6daf1dab81a222a))
+* tag releases with bare semver ([5a3d9da](https://github.com/maptic/mounty/commit/5a3d9da8fc51db570d53586d90f58e0281e5f05a))
+
 ## [1.2.0](https://github.com/maptic/mounty/compare/mounty-v1.1.0...mounty-v1.2.0) (2026-08-10)
 
 

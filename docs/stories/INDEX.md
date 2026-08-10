@@ -4,6 +4,8 @@ Newest stories first. Statuses: `OPEN`, `IN_PROGRESS`, `CLOSED`.
 
 | ID | Type | Story | Status | Date |
 | --- | --- | --- | --- | --- |
+| [014](./014-volume-identity-enforcement.md) | fix | Volume identity enforcement | CLOSED | 2026-08-10 |
+| [013](./013-offline-mount-lifecycle.md) | fix | Offline mount lifecycle preservation | CLOSED | 2026-08-10 |
 | [012](./012-ci-warning-enforcement.md) | ci | CI warning enforcement | CLOSED | 2026-08-10 |
 | [011](./011-import-volume-identity.md) | fix | Import volume identity integrity | CLOSED | 2026-08-10 |
 | [010](./010-volume-operation-safety.md) | fix | Volume operation safety | CLOSED | 2026-08-10 |

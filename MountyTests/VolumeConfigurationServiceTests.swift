@@ -62,4 +62,41 @@ struct VolumeConfigurationServiceTests {
         #expect(result.importedCount == 1)
         #expect(result.volumes == [first])
     }
+
+    @Test func treatsSMBHostsAndPathsAsCaseInsensitive() {
+        let existing = Volume(
+            name: "Media",
+            serverAddress: "smb://NAS.local/Media/"
+        )
+        let duplicate = Volume(
+            name: "Duplicate",
+            serverAddress: "smb://nas.local/media"
+        )
+
+        #expect(
+            VolumeConfigurationService.hasDuplicateServerIdentity(
+                for: duplicate.serverAddress,
+                in: [existing]
+            )
+        )
+
+        let result = VolumeConfigurationService.merging([duplicate], into: [existing])
+        #expect(result.importedCount == 0)
+        #expect(result.volumes == [existing])
+    }
+
+    @Test func excludesEditedVolumeFromDuplicateCheck() {
+        let existing = Volume(
+            name: "Media",
+            serverAddress: "smb://nas.local/media"
+        )
+
+        #expect(
+            !VolumeConfigurationService.hasDuplicateServerIdentity(
+                for: "smb://NAS.local/Media/",
+                in: [existing],
+                excludingID: existing.id
+            )
+        )
+    }
 }

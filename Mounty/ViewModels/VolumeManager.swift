@@ -494,27 +494,39 @@ final class VolumeManager {
 
     // MARK: - Persistence
 
-    func addVolume(_ volume: Volume) {
-        guard !isClearingVolumes else { return }
+    @discardableResult
+    func addVolume(_ volume: Volume) -> Bool {
+        guard !isClearingVolumes else { return false }
+        guard
+            !VolumeConfigurationService.hasDuplicateServerIdentity(
+                for: volume.serverAddress,
+                in: volumes
+            )
+        else {
+            reportDuplicateVolume()
+            return false
+        }
         volumes.append(volume)
         storage.saveVolumes(volumes)
         log("Added volume: \(volume.name)")
         Task { await refreshState() }
+        return true
     }
 
     func removeVolume(_ id: UUID) {
         guard !isClearingVolumes, !busyVolumes.contains(id) else { return }
         guard speedTestVolumeId != id || !isRunningSpeedTest else { return }
         guard let volume = volumes.first(where: { $0.id == id }) else { return }
-        guard let path = mountPaths[id] else {
-            removeVolumeConfiguration(id: id, name: volume.name)
-            Task { await refreshState() }
-            return
-        }
 
         busyVolumes.insert(id)
         log("Removing volume: \(volume.name)")
         Task {
+            guard let path = await kernelMountPath(for: volume) else {
+                self.busyVolumes.remove(id)
+                self.removeVolumeConfiguration(id: id, name: volume.name)
+                await self.refreshState()
+                return
+            }
             guard await MountService.unmount(path: path) else {
                 self.reportUnmountFailure(for: volume, action: "Remove")
                 await self.refreshState()
@@ -527,10 +539,21 @@ final class VolumeManager {
         }
     }
 
-    func editVolume(id: UUID, name: String, serverAddress: String) {
-        guard !isClearingVolumes, !busyVolumes.contains(id) else { return }
-        guard speedTestVolumeId != id || !isRunningSpeedTest else { return }
-        guard let idx = volumes.firstIndex(where: { $0.id == id }) else { return }
+    @discardableResult
+    func editVolume(id: UUID, name: String, serverAddress: String) -> Bool {
+        guard !isClearingVolumes, !busyVolumes.contains(id) else { return false }
+        guard speedTestVolumeId != id || !isRunningSpeedTest else { return false }
+        guard let idx = volumes.firstIndex(where: { $0.id == id }) else { return false }
+        guard
+            !VolumeConfigurationService.hasDuplicateServerIdentity(
+                for: serverAddress,
+                in: volumes,
+                excludingID: id
+            )
+        else {
+            reportDuplicateVolume()
+            return false
+        }
         let old = volumes[idx]
         let addressChanged = old.serverAddress != serverAddress
 
@@ -538,22 +561,28 @@ final class VolumeManager {
             volumes[idx].name = name
             storage.saveVolumes(volumes)
             log("Updated volume: \(name)")
-            return
+            return true
         }
 
-        guard let oldPath = mountPaths[id] else {
-            volumes[idx].name = name
-            volumes[idx].serverAddress = serverAddress
-            storage.saveVolumes(volumes)
-            log("Updated volume: \(name)")
-            return
-        }
-
-        // Unmount the old connection by its recorded path, then remount at the new address.
-        // Using oldPath (not the new address) ensures we disconnect the right kernel mount
-        // even if the new address points to a different share entirely.
         busyVolumes.insert(id)
         Task {
+            guard let oldPath = await kernelMountPath(for: old) else {
+                guard let currentIndex = self.volumes.firstIndex(where: { $0.id == id }) else {
+                    self.busyVolumes.remove(id)
+                    return
+                }
+                self.volumes[currentIndex].name = name
+                self.volumes[currentIndex].serverAddress = serverAddress
+                self.storage.saveVolumes(self.volumes)
+                self.log("Updated volume: \(name)")
+                self.busyVolumes.remove(id)
+                await self.refreshState()
+                return
+            }
+
+            // Unmount the old connection by its discovered path, then remount at the new address.
+            // Looking up the kernel mount keeps the old share managed even when a network
+            // transition has cleared the UI's cached mount state.
             guard await MountService.unmount(path: oldPath) else {
                 self.reportUnmountFailure(for: old, action: "Reconnect")
                 await self.refreshState()
@@ -585,6 +614,7 @@ final class VolumeManager {
             self.busyVolumes.remove(id)
             await self.refreshState()
         }
+        return true
     }
 
     func clearAllVolumes() {
@@ -597,13 +627,18 @@ final class VolumeManager {
         isClearingVolumes = true
         let configuredVolumes = volumes
         let configuredIDs = Set(configuredVolumes.map(\.id))
-        let mountedVolumes = configuredVolumes.compactMap { volume in
-            mountPaths[volume.id].map { (volume, $0) }
-        }
-        for (volume, _) in mountedVolumes { busyVolumes.insert(volume.id) }
 
         Task {
             defer { self.isClearingVolumes = false }
+            let mountedVolumes = await Task.detached(priority: .userInitiated) {
+                let systemMounts = SystemMountService.getSystemMounts()
+                return configuredVolumes.compactMap { volume in
+                    SystemMountService.findMountPath(for: volume, in: systemMounts).map {
+                        (volume, $0)
+                    }
+                }
+            }.value
+            for (volume, _) in mountedVolumes { self.busyVolumes.insert(volume.id) }
             var retainedIDs = Set<UUID>()
             for (volume, path) in mountedVolumes {
                 guard await MountService.unmount(path: path) else {
@@ -631,6 +666,21 @@ final class VolumeManager {
         volumes.removeAll { $0.id == id }
         storage.saveVolumes(volumes)
         log("Removed volume: \(name)")
+    }
+
+    private func reportDuplicateVolume() {
+        lastError = "A volume for this SMB share already exists."
+        showError = true
+        log("Volume update skipped: duplicate SMB share", level: .warning)
+    }
+
+    private func kernelMountPath(for volume: Volume) async -> String? {
+        await Task.detached(priority: .userInitiated) {
+            SystemMountService.findMountPath(
+                for: volume,
+                in: SystemMountService.getSystemMounts()
+            )
+        }.value
     }
 
     private func reportUnmountFailure(for volume: Volume, action: String) {

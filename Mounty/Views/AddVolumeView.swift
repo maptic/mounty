@@ -95,7 +95,7 @@ struct AddVolumeView: View {
     private func save() {
         guard !name.isEmpty, !address.isEmpty else { return }
         let fullAddress = Volume.smbServerAddress(from: address)
-        manager.addVolume(Volume(name: name, serverAddress: fullAddress))
+        guard manager.addVolume(Volume(name: name, serverAddress: fullAddress)) else { return }
         viewMode = .list
     }
 }
@@ -152,7 +152,13 @@ struct EditVolumeView: View {
     private func save() {
         guard !name.isEmpty, !address.isEmpty else { return }
         let fullAddress = Volume.smbServerAddress(from: address)
-        manager.editVolume(id: volume.id, name: name, serverAddress: fullAddress)
+        guard
+            manager.editVolume(
+                id: volume.id,
+                name: name,
+                serverAddress: fullAddress
+            )
+        else { return }
         viewMode = .list
     }
 }

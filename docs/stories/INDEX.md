@@ -4,6 +4,7 @@ Newest stories first. Statuses: `OPEN`, `IN_PROGRESS`, `CLOSED`.
 
 | ID | Type | Story | Status | Date |
 | --- | --- | --- | --- | --- |
+| [020](./020-repository-link-and-asset-organization.md) | feat | Repository link and asset organization | CLOSED | 2026-08-10 |
 | [019](./019-copy-mounted-path.md) | feat | Copy mounted path | CLOSED | 2026-08-10 |
 | [018](./018-settings-scrolling-and-dialog-presentation.md) | fix | Settings scrolling and dialog presentation | CLOSED | 2026-08-10 |
 | [017](./017-main-list-resize-layout.md) | fix | Main list resize layout | CLOSED | 2026-08-10 |

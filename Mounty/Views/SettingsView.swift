@@ -15,6 +15,7 @@ struct SettingsView: View {
         ?? "1.0"
     let buildNumber =
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+    private let repositoryURL = URL(string: "https://github.com/maptic/mounty")
 
     var body: some View {
         ZStack {
@@ -105,6 +106,15 @@ struct SettingsView: View {
                                 Text("Version \(appVersion) (\(buildNumber))")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
+
+                                if let repositoryURL {
+                                    Link(destination: repositoryURL) {
+                                        Image(systemName: "link")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .help("View Mounty on GitHub")
+                                }
                             }
                             Spacer()
                         }

@@ -99,4 +99,22 @@ struct VolumeConfigurationServiceTests {
             )
         )
     }
+
+    @Test func validatesReachableSMBEndpoints() {
+        #expect(VolumeConfigurationService.isValidServerAddress("smb://nas.local/media"))
+        #expect(VolumeConfigurationService.isValidServerAddress("nas.local/media"))
+        #expect(!VolumeConfigurationService.isValidServerAddress("/media"))
+        #expect(!VolumeConfigurationService.isValidServerAddress("smb:///media"))
+        #expect(!VolumeConfigurationService.isValidServerAddress("smb://nas.local:1445/media"))
+    }
+
+    @Test func skipsInvalidAddressesDuringImport() {
+        let invalid = Volume(name: "Invalid", serverAddress: "smb:///media")
+        let valid = Volume(name: "Media", serverAddress: "smb://nas.local/media")
+
+        let result = VolumeConfigurationService.merging([invalid, valid], into: [])
+
+        #expect(result.importedCount == 1)
+        #expect(result.volumes == [valid])
+    }
 }

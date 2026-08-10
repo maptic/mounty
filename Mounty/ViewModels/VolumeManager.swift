@@ -497,6 +497,10 @@ final class VolumeManager {
     @discardableResult
     func addVolume(_ volume: Volume) -> Bool {
         guard !isClearingVolumes else { return false }
+        guard VolumeConfigurationService.isValidServerAddress(volume.serverAddress) else {
+            reportInvalidServerAddress()
+            return false
+        }
         guard
             !VolumeConfigurationService.hasDuplicateServerIdentity(
                 for: volume.serverAddress,
@@ -544,6 +548,10 @@ final class VolumeManager {
         guard !isClearingVolumes, !busyVolumes.contains(id) else { return false }
         guard speedTestVolumeId != id || !isRunningSpeedTest else { return false }
         guard let idx = volumes.firstIndex(where: { $0.id == id }) else { return false }
+        guard VolumeConfigurationService.isValidServerAddress(serverAddress) else {
+            reportInvalidServerAddress()
+            return false
+        }
         guard
             !VolumeConfigurationService.hasDuplicateServerIdentity(
                 for: serverAddress,
@@ -555,10 +563,13 @@ final class VolumeManager {
             return false
         }
         let old = volumes[idx]
-        let addressChanged = old.serverAddress != serverAddress
+        let addressChanged =
+            VolumeConfigurationService.serverIdentity(for: old.serverAddress)
+            != VolumeConfigurationService.serverIdentity(for: serverAddress)
 
         if !addressChanged {
             volumes[idx].name = name
+            volumes[idx].serverAddress = serverAddress
             storage.saveVolumes(volumes)
             log("Updated volume: \(name)")
             return true
@@ -672,6 +683,12 @@ final class VolumeManager {
         lastError = "A volume for this SMB share already exists."
         showError = true
         log("Volume update skipped: duplicate SMB share", level: .warning)
+    }
+
+    private func reportInvalidServerAddress() {
+        lastError = "Enter a valid SMB server and optional share. Custom ports are not supported."
+        showError = true
+        log("Volume update skipped: invalid SMB address", level: .warning)
     }
 
     private func kernelMountPath(for volume: Volume) async -> String? {

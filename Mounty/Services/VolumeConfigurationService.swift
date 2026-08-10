@@ -16,6 +16,7 @@ struct VolumeConfigurationService {
         var importedCount = 0
 
         for volume in importedVolumes {
+            guard isValidServerAddress(volume.serverAddress) else { continue }
             let identity = serverIdentity(for: volume.serverAddress)
             guard !knownIDs.contains(volume.id), !knownIdentities.contains(identity)
             else { continue }
@@ -38,6 +39,18 @@ struct VolumeConfigurationService {
         return volumes.contains {
             $0.id != excludingID && serverIdentity(for: $0.serverAddress) == identity
         }
+    }
+
+    static func isValidServerAddress(_ serverAddress: String) -> Bool {
+        let normalizedAddress = Volume.smbServerAddress(from: serverAddress)
+        guard
+            let url = URL(string: normalizedAddress),
+            let host = url.host,
+            !host.isEmpty
+        else {
+            return false
+        }
+        return url.port == nil || url.port == 445
     }
 
     static func serverIdentity(for serverAddress: String) -> String {

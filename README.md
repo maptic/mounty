@@ -31,9 +31,8 @@ manually re-mounting shares in Finder.
 brew install --cask maptic/tap/mounty
 ```
 
-Use the **full `maptic/tap/mounty` token**: `mounty` on its own is
-[Mounty for NTFS](https://formulae.brew.sh/cask/mounty) in `homebrew/cask`, an unrelated app that
-happens to share the name.
+Always install with the **full `maptic/tap/mounty` token** — the unqualified `mounty` does not
+resolve to this cask.
 
 ### Direct download
 

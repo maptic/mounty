@@ -16,8 +16,8 @@ macOS 15 — it cannot work on the macOS 26 Mounty requires, leaving a first-tim
 - [x] The Gatekeeper note documents the System Settings → Privacy & Security → **Open Anyway** route.
 - [x] The `xattr -dr` alternative states that it fails with `Operation not permitted` unless the
       terminal holds the **App Management** permission.
-- [x] The Homebrew section warns that the bare `mounty` token installs Mounty for NTFS from
-      `homebrew/cask`.
+- [x] The Homebrew section states that only the full `maptic/tap/mounty` token resolves to this
+      cask.
 
 ## Validation
 

@@ -34,5 +34,5 @@ and `brew audit --cask --online --strict maptic/tap/mounty` and
 `brew livecheck --cask maptic/tap/mounty` (`1.2.1 ==> 1.2.1`) both pass. Subsequent releases bump
 the cask automatically.
 
-Note for consumers: `mounty` alone resolves to Mounty for NTFS in `homebrew/cask`, so the full
+Note for consumers: `mounty` alone resolves to another cask in `homebrew/cask`, so the full
 `maptic/tap/mounty` token is required.

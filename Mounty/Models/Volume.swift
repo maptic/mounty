@@ -7,7 +7,14 @@ struct Volume: Identifiable, Codable, Equatable, Sendable {
     var isAutomountEnabled: Bool = false
     var dateAdded: Date = Date()
 
-    var host: String? { URL(string: serverAddress)?.host }
+    nonisolated static func shareAddress(from value: String) -> String {
+        guard let separator = value.range(of: "://") else { return value }
+        return String(value[separator.upperBound...])
+    }
+
+    nonisolated static func smbServerAddress(from value: String) -> String {
+        "smb://\(shareAddress(from: value))"
+    }
 
     // Explicit nonisolated conformance so Equatable can be used freely across
     // actor boundaries (otherwise the implicit @MainActor isolation from the

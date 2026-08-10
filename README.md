@@ -37,8 +37,9 @@ brew install --cask maptic/tap/mounty
 2. Open the DMG and drag **Mounty** into `Applications`.
 
 > [!IMPORTANT]
-> **First-launch Gatekeeper note.** Mounty is currently distributed **unsigned** (we do not yet
-> have an Apple Developer ID). macOS will refuse to open it on the first try. To allow it:
+> **First-launch Gatekeeper note.** Releases are signed and notarized when the release workflow has
+> Developer ID credentials. For an ad-hoc-signed release, macOS may refuse to open it on the first
+> try. To allow that build:
 >
 > - **Right-click** `Mounty.app` → **Open** → **Open** in the dialog, **or**
 > - remove the quarantine flag from a terminal:
@@ -46,8 +47,7 @@ brew install --cask maptic/tap/mounty
 >   xattr -dr com.apple.quarantine /Applications/Mounty.app
 >   ```
 >
-> This is a one-time step. Once we obtain a Developer ID, releases will be notarized and this step
-> will no longer be necessary.
+> This is a one-time step and is unnecessary for notarized releases.
 
 ## Build from source
 

@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import Network
+import Synchronization
 
 /// Verifies server and mount point responsiveness.
 struct ReachabilityService {
@@ -65,9 +66,6 @@ struct ReachabilityService {
                 using: .tcp
             )
 
-            // Thread-safe gate: ensures continuation.resume is called exactly once
-            // even when the timeout and stateUpdateHandler fire concurrently.
-            // @unchecked Sendable is safe here because NSLock guards the mutation.
             let gate = ResumeGate()
 
             DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
@@ -110,14 +108,13 @@ struct ReachabilityService {
     }
 }
 
-private final class MountProbeRegistry: @unchecked Sendable {
+private final class MountProbeRegistry: Sendable {
     private struct ProbeState {
         var result: Bool?
         var waiters: [CheckedContinuation<Bool, Never>]
     }
 
-    private let lock = NSLock()
-    private nonisolated(unsafe) var probes: [String: ProbeState] = [:]
+    private let probes = Mutex([String: ProbeState]())
 
     /// Registers a caller and returns true only when it must start the underlying syscall.
     nonisolated func register(
@@ -125,7 +122,7 @@ private final class MountProbeRegistry: @unchecked Sendable {
         continuation: CheckedContinuation<Bool, Never>
     ) -> Bool {
         var immediateResult: Bool?
-        let shouldStart = lock.withLock {
+        let shouldStart = probes.withLock { probes in
             guard var state = probes[path] else {
                 probes[path] = ProbeState(result: nil, waiters: [continuation])
                 return true
@@ -147,7 +144,7 @@ private final class MountProbeRegistry: @unchecked Sendable {
     /// Resolves all current and future waiters while the non-cancellable syscall remains active.
     @discardableResult
     nonisolated func resolve(path: String, result: Bool) -> Bool {
-        let waiters: [CheckedContinuation<Bool, Never>]? = lock.withLock {
+        let waiters: [CheckedContinuation<Bool, Never>]? = probes.withLock { probes in
             guard var state = probes[path], state.result == nil else { return nil }
             state.result = result
             let waiters = state.waiters
@@ -163,25 +160,18 @@ private final class MountProbeRegistry: @unchecked Sendable {
     }
 
     nonisolated func finish(path: String) {
-        lock.withLock { _ = probes.removeValue(forKey: path) }
+        probes.withLock { _ = $0.removeValue(forKey: path) }
     }
 }
 
-/// Single-use boolean flag protected by NSLock; safe to share across @Sendable closures.
-final class ResumeGate: @unchecked Sendable {
-    private let lock = NSLock()
-    // nonisolated(unsafe): opts out of implicit @MainActor isolation;
-    // thread safety is guaranteed by `lock`.
-    private nonisolated(unsafe) var resumed = false
+private final class ResumeGate: Sendable {
+    private let resumed = Mutex(false)
 
-    // Explicit nonisolated init: SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor would make
-    // the synthesised init() @MainActor, causing a warning when ResumeGate is created
-    // from nonisolated contexts. NSLock and Bool are not actor-isolated, so this is safe.
     nonisolated init() {}
 
     /// Returns `true` the first time it is called; `false` on all subsequent calls.
     nonisolated func tryResume() -> Bool {
-        lock.withLock {
+        resumed.withLock { resumed in
             guard !resumed else { return false }
             resumed = true
             return true

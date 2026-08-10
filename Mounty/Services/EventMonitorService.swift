@@ -1,9 +1,15 @@
 import AppKit
 import Foundation
 import Network
+import Synchronization
+
+private struct InterfaceMonitorState: Sendable {
+    var fingerprint = ""
+    var pendingChange: Task<Void, Never>?
+}
 
 /// Monitors OS events and exposes them as async sequences.
-class EventMonitorService {
+final class EventMonitorService {
 
     let networkStatusStream: AsyncStream<NWPath.Status>
     let interfacesChangedStream: AsyncStream<Void>
@@ -15,9 +21,8 @@ class EventMonitorService {
 
     private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "com.mounty.network", qos: .background)
-    // Written and read exclusively on monitorQueue — nonisolated(unsafe) bypasses the
-    // implicit @MainActor isolation without requiring an @unchecked Sendable wrapper.
-    private nonisolated(unsafe) var lastInterfaceFingerprint = ""
+    nonisolated private let interfaceState = Mutex(InterfaceMonitorState())
+
     init() {
         (networkStatusStream, networkStatusContinuation) = AsyncStream.makeStream(
             of: NWPath.Status.self, bufferingPolicy: .bufferingNewest(1)
@@ -42,19 +47,28 @@ class EventMonitorService {
                 .sorted()
                 .joined(separator: ",")
 
-            if currentInterfaces != lastInterfaceFingerprint {
+            let continuation = interfacesChangedContinuation
+            let didChange = interfaceState.withLock { state in
+                guard currentInterfaces != state.fingerprint else { return false }
+                state.fingerprint = currentInterfaces
+                state.pendingChange?.cancel()
+                state.pendingChange = Task {
+                    do {
+                        try await Task.sleep(for: .seconds(1))
+                        continuation.yield()
+                    } catch {
+                        // A newer interface update superseded this one.
+                    }
+                }
+                return true
+            }
+
+            if didChange {
                 AppLogger.log(
                     "Interface topology changed: \(currentInterfaces)",
                     level: .debug,
                     source: .eventMonitor
                 )
-                lastInterfaceFingerprint = currentInterfaces
-                // 1-second debounce: let the interface topology settle before
-                // triggering a reconnect attempt.
-                Task { [weak self] in
-                    try? await Task.sleep(for: .seconds(1))
-                    self?.interfacesChangedContinuation.yield()
-                }
             }
         }
         monitor.start(queue: monitorQueue)

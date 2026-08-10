@@ -19,6 +19,7 @@ struct SpeedTestService {
             .appendingPathComponent(".mounty_speed_\(UUID().uuidString)")
         let path = testURL.path
         let byteCount = Int(fileSizeMB * 1024 * 1024)
+        guard byteCount > 0 else { throw SpeedTestError.invalidFileSize }
 
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -39,10 +40,11 @@ struct SpeedTestService {
                     // can be near-instant even for slow links.
                     let writeStart = Date()
                     try data.write(to: testURL)
-                    let wfd = Darwin.open(path, O_RDONLY)
-                    if wfd >= 0 {
-                        _ = Darwin.fcntl(wfd, F_FULLFSYNC)
-                        Darwin.close(wfd)
+                    let writeDescriptor = Darwin.open(path, O_RDONLY)
+                    guard writeDescriptor >= 0 else { throw posixError() }
+                    defer { Darwin.close(writeDescriptor) }
+                    guard Darwin.fcntl(writeDescriptor, F_FULLFSYNC) == 0 else {
+                        throw posixError()
                     }
                     let writeDuration = max(Date().timeIntervalSince(writeStart), 0.001)
 
@@ -50,29 +52,36 @@ struct SpeedTestService {
                     // F_NOCACHE bypasses the unified buffer cache. Without it the
                     // OS would serve the just-written bytes from RAM, reporting
                     // multi-GB/s "speeds" that have nothing to do with the network.
-                    var readDuration = 0.001
-                    let rfd = Darwin.open(path, O_RDONLY)
-                    if rfd >= 0 {
-                        _ = Darwin.fcntl(rfd, F_NOCACHE, 1)
-                        let readStart = Date()
-                        var buffer = [UInt8](repeating: 0, count: byteCount)
-                        // read(2) may return fewer bytes than requested on network
-                        // filesystems; loop until all bytes are consumed or EOF/error.
-                        buffer.withUnsafeMutableBytes { ptr in
-                            var remaining = byteCount
-                            var offset = 0
-                            while remaining > 0 {
-                                let n = Darwin.read(
-                                    rfd, ptr.baseAddress!.advanced(by: offset), remaining
-                                )
-                                if n <= 0 { break }
-                                offset += n
-                                remaining -= n
-                            }
-                        }
-                        readDuration = max(Date().timeIntervalSince(readStart), 0.001)
-                        Darwin.close(rfd)
+                    let readDescriptor = Darwin.open(path, O_RDONLY)
+                    guard readDescriptor >= 0 else { throw posixError() }
+                    defer { Darwin.close(readDescriptor) }
+                    guard Darwin.fcntl(readDescriptor, F_NOCACHE, 1) == 0 else {
+                        throw posixError()
                     }
+
+                    let readStart = Date()
+                    var buffer = [UInt8](repeating: 0, count: byteCount)
+                    let bytesRead = try buffer.withUnsafeMutableBytes { pointer in
+                        guard let baseAddress = pointer.baseAddress else {
+                            throw SpeedTestError.invalidFileSize
+                        }
+                        var offset = 0
+                        while offset < byteCount {
+                            let count = Darwin.read(
+                                readDescriptor,
+                                baseAddress.advanced(by: offset),
+                                byteCount - offset
+                            )
+                            if count < 0 { throw posixError() }
+                            if count == 0 { break }
+                            offset += count
+                        }
+                        return offset
+                    }
+                    guard bytesRead == byteCount else {
+                        throw SpeedTestError.incompleteRead(expected: byteCount, actual: bytesRead)
+                    }
+                    let readDuration = max(Date().timeIntervalSince(readStart), 0.001)
 
                     continuation.resume(
                         returning: Result(
@@ -96,6 +105,24 @@ struct SpeedTestService {
                 return
             } catch {
                 if attempt < 3 { Thread.sleep(forTimeInterval: 0.2) }
+            }
+        }
+    }
+
+    private nonisolated static func posixError() -> NSError {
+        NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+
+    private enum SpeedTestError: LocalizedError {
+        case invalidFileSize
+        case incompleteRead(expected: Int, actual: Int)
+
+        nonisolated var errorDescription: String? {
+            switch self {
+            case .invalidFileSize:
+                "Speed test size must be greater than zero."
+            case .incompleteRead(let expected, let actual):
+                "Speed test read \(actual) of \(expected) bytes."
             }
         }
     }

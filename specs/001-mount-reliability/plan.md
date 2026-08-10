@@ -8,7 +8,7 @@
 Introduce a thread-safe application log channel that writes every Mounty-owned event to `os.Logger`
 and an `AsyncStream` consumed by `VolumeManager`. Replace the timing-out asynchronous NetFS bridge
 with the previously working synchronous API, isolated in a detached task and serialized by the
-automount workflow. Do not expose a false timeout for a C operation that cannot be cancelled.
+`MountService` actor gate. Do not expose a false timeout for a C operation that cannot be cancelled.
 
 Update the heartbeat to refresh and then automount. Share one in-flight filesystem liveness probe
 per path so repeated checks cannot consume an unbounded number of threads.

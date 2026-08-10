@@ -4,7 +4,7 @@ import SwiftUI
 /// ViewModel: Orchestrates detection logic, automounting, state management, and data persistence.
 @MainActor
 @Observable
-class VolumeManager {
+final class VolumeManager {
 
     // MARK: - UI State
     var volumes: [Volume] = []
@@ -23,22 +23,22 @@ class VolumeManager {
     var availableTerminals: [(name: String, id: String)] = []
 
     // Feedback & Errors
-    var lastError: String? = nil
-    var showError: Bool = false
-    var successMessage: String? = nil
-    var showSuccess: Bool = false
+    var lastError: String?
+    var showError = false
+    var successMessage: String?
+    var showSuccess = false
 
     // In-app log buffer (capped at maxLogEntries)
     var logEntries: [LogEntry] = []
     var minimumLogLevel: LogEntry.Level
 
     // Speed test state
-    var speedTestVolumeId: UUID? = nil
+    var speedTestVolumeId: UUID?
     var isRunningSpeedTest = false
-    var speedTestResult: SpeedTestService.Result? = nil
-    var speedTestError: String? = nil
+    var speedTestResult: SpeedTestService.Result?
+    var speedTestError: String?
 
-    private var isNetworkUp: Bool = true
+    private var isNetworkUp = true
     private let maxLogEntries = 200
 
     // Dependencies
@@ -302,11 +302,8 @@ class VolumeManager {
         let networkAvailable = self.isNetworkUp
         let prevPaths = self.mountPaths
 
-        // NOTE: Task inherits priority from the caller.
-        // Events call this with .userInitiated (Fast).
-        // Timer calls this with .utility (Efficient).
         let newPaths = await Task.detached {
-            return await VolumeManager.detectMounts(
+            await VolumeManager.detectMounts(
                 volumes: currentVolumes,
                 isNetworkUp: networkAvailable
             )
@@ -339,21 +336,21 @@ class VolumeManager {
         await withTaskGroup(of: (UUID, String?).self) { group in
             for volume in volumes {
                 group.addTask {
-                    if let path = SystemMountService.findMountPath(
-                        for: volume,
-                        in: systemMounts
-                    ) {
-                        // 1. TCP Reachability (fastest fail for dropped VPNs)
-                        if await ReachabilityService.isServerReachable(
+                    guard
+                        let path = SystemMountService.findMountPath(
+                            for: volume,
+                            in: systemMounts
+                        )
+                    else { return (volume.id, nil) }
+                    guard
+                        await ReachabilityService.isServerReachable(
                             address: volume.serverAddress
-                        ) {
-                            // 2. IO Reachability (catches hung kernel mounts)
-                            if await ReachabilityService.isMountPointAlive(path: path) {
-                                return (volume.id, path)
-                            }
-                        }
+                        )
+                    else { return (volume.id, nil) }
+                    guard await ReachabilityService.isMountPointAlive(path: path) else {
+                        return (volume.id, nil)
                     }
-                    return (volume.id, nil)
+                    return (volume.id, path)
                 }
             }
             for await (id, path) in group {

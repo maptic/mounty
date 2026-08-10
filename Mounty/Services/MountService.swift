@@ -6,6 +6,7 @@ import ServiceManagement
 
 /// Action Service.
 struct MountService {
+    nonisolated private static let mountGate = MountGate()
 
     // MARK: - Mount Result
 
@@ -14,13 +15,13 @@ struct MountService {
         case failed(code: Int32)
 
         nonisolated var path: String? {
-            if case .success(let p) = self { return p }
+            if case .success(let path) = self { return path }
             return nil
         }
 
         nonisolated var debugDescription: String {
             switch self {
-            case .success(let p): return "success → \(p)"
+            case .success(let path): return "success → \(path)"
             case .failed(let code):
                 let detail =
                     code > 0
@@ -35,6 +36,13 @@ struct MountService {
 
     /// Mounts a network share with NetFS without blocking MainActor.
     nonisolated static func mount(url: URL) async -> MountResult {
+        await mountGate.acquire()
+        let result = await mountExclusively(url: url)
+        await mountGate.release()
+        return result
+    }
+
+    nonisolated private static func mountExclusively(url: URL) async -> MountResult {
         if let existing = await Task.detached(
             priority: .userInitiated,
             operation: {
@@ -233,6 +241,29 @@ struct MountService {
     }
 
     nonisolated static func isLoginItemEnabled() -> Bool {
-        return SMAppService.mainApp.status == .enabled
+        SMAppService.mainApp.status == .enabled
+    }
+}
+
+private actor MountGate {
+    private var isHeld = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        guard isHeld else {
+            isHeld = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        guard !waiters.isEmpty else {
+            isHeld = false
+            return
+        }
+        waiters.removeFirst().resume()
     }
 }

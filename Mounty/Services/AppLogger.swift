@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import os
 
 /// Routes Mounty-owned diagnostics to Unified Logging and the in-app log stream.
@@ -32,17 +33,20 @@ struct AppLogger {
     }
 }
 
-private final class LogHub: @unchecked Sendable {
-    private let lock = NSLock()
-    private nonisolated(unsafe) var history: [LogEntry] = []
-    private nonisolated(unsafe) var subscribers: [UUID: AsyncStream<LogEntry>.Continuation] = [:]
+private final class LogHub: Sendable {
+    private struct State {
+        var history: [LogEntry] = []
+        var subscribers: [UUID: AsyncStream<LogEntry>.Continuation] = [:]
+    }
+
+    private let state = Mutex(State())
 
     nonisolated func makeStream() -> AsyncStream<LogEntry> {
         let subscriberID = UUID()
         return AsyncStream(bufferingPolicy: .bufferingNewest(500)) { continuation in
-            lock.withLock {
-                subscribers[subscriberID] = continuation
-                for entry in history {
+            state.withLock { state in
+                state.subscribers[subscriberID] = continuation
+                for entry in state.history {
                     continuation.yield(entry)
                 }
             }
@@ -53,12 +57,12 @@ private final class LogHub: @unchecked Sendable {
     }
 
     nonisolated func emit(_ entry: LogEntry) {
-        let continuations = lock.withLock {
-            history.append(entry)
-            if history.count > 500 {
-                history.removeFirst(history.count - 500)
+        let continuations = state.withLock { state in
+            state.history.append(entry)
+            if state.history.count > 500 {
+                state.history.removeFirst(state.history.count - 500)
             }
-            return Array(subscribers.values)
+            return Array(state.subscribers.values)
         }
         for continuation in continuations {
             continuation.yield(entry)
@@ -66,10 +70,10 @@ private final class LogHub: @unchecked Sendable {
     }
 
     nonisolated func clearHistory() {
-        lock.withLock { history.removeAll() }
+        state.withLock { $0.history.removeAll() }
     }
 
     nonisolated private func removeSubscriber(_ id: UUID) {
-        lock.withLock { _ = subscribers.removeValue(forKey: id) }
+        state.withLock { _ = $0.subscribers.removeValue(forKey: id) }
     }
 }

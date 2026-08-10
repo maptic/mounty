@@ -3,6 +3,7 @@ import Testing
 
 @testable import Mounty
 
+@MainActor
 struct PersistenceServiceTests {
 
     /// Round-trips volumes through an isolated UserDefaults suite so real preferences are untouched.

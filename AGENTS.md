@@ -11,7 +11,7 @@ Mounty is a macOS **menu-bar app** (SwiftUI) that keeps SMB network shares mount
 It reacts to network/VPN/reachability changes and re-mounts shares as soon as their server is
 reachable.
 
-- Language: Swift 5.9+ / Swift Concurrency (`async`/`await`). **Avoid Combine entirely** — use
+- Language: Swift 6 / Swift Concurrency (`async`/`await`). **Avoid Combine entirely** — use
   `AsyncStream` for event sequences and `async`/`await` everywhere else.
 - UI: SwiftUI, `MenuBarExtra` (`.window` style).
 - Target: macOS 26.1+, Xcode 26+. Bundle id `ch.maptic.Mounty`.
@@ -24,12 +24,15 @@ reachable.
 Mounty/Mounty/
 ├─ MountyApp.swift            # @main App, MenuBarExtra scene
 ├─ Models/
-│  └─ Volume.swift            # Volume value type (+ AppViewMode enum)
-├─ Services/                  # Stateless/side-effecting units — the business logic
+│  ├─ LogEntry.swift          # Categorized in-app log value type
+│  └─ Volume.swift            # Volume value type, SMB normalization (+ AppViewMode enum)
+├─ Services/                  # Side-effecting/state-owning units — the business logic
+│  ├─ AppLogger.swift           # Unified Logging + thread-safe AsyncStream history
 │  ├─ MountService.swift        # mount/unmount via NetFS, open in Finder/terminal, login item
 │  ├─ SystemMountService.swift  # query kernel mounts (getmntinfo), match config → mount path
 │  ├─ ReachabilityService.swift # TCP (port 445) + I/O liveness checks
-│  ├─ EventMonitorService.swift # NWPathMonitor + workspace mount notifications (Combine subjects)
+│  ├─ SpeedTestService.swift     # uncached SMB read/write throughput measurement
+│  ├─ EventMonitorService.swift # NWPathMonitor + workspace notifications via AsyncStream
 │  └─ PersistenceService.swift  # UserDefaults-backed storage (injectable defaults)
 ├─ ViewModels/
 │  └─ VolumeManager.swift     # @MainActor @Observable class; orchestrates detection/automount/state
@@ -72,8 +75,9 @@ When running inside an IDE with MCP tools available (e.g. Xcode), prefer `BuildP
 
 Test **business logic that can actually break** — keep the suite minimal and meaningful. Do **not**
 test trivial getters, SwiftUI views, or the network-driven side effects of `VolumeManager`. Good
-targets: mount-path matching (`SystemMountService`), URL parsing (`Volume.host`), persistence
-round-trips. Use the **Swift Testing** framework (`import Testing`, `@Test`, `#expect`), not XCTest.
+targets: mount-path matching (`SystemMountService`), SMB address normalization (`Volume`), input
+validation, and persistence round-trips. Use the **Swift Testing** framework (`import Testing`,
+`@Test`, `#expect`), not XCTest.
 
 ## Commits & releases (Conventional Commits)
 
@@ -148,9 +152,9 @@ will break the user experience even if the code is otherwise correct.
   `@MainActor` unless explicitly marked `nonisolated`. Common patterns to follow:
   - Value types shared across actors: add an explicit `nonisolated static func ==` (see
     `Volume.swift`).
-  - Classes shared across `@Sendable` closures: mark as `@unchecked Sendable`, protect mutable
-    state with `NSLock`, and annotate mutable properties `nonisolated(unsafe)` (see
-    `ReachabilityService.ResumeGate`).
+  - Shared mutable state in synchronous callbacks: prefer `Synchronization.Mutex`. Avoid
+    `@unchecked Sendable` and `nonisolated(unsafe)` unless an external API provides the
+    synchronization guarantee and that guarantee is documented locally.
   - Methods called from `@Sendable` closures: mark `nonisolated`.
 - Keep changes scoped to the request; don't refactor unrelated code.
 - Never commit secrets, `.p12`, provisioning profiles, or notarization keys.

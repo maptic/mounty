@@ -12,4 +12,4 @@
 - [x] All acceptance criteria in `spec.md` met
 - [x] Business logic covered by Swift Testing tests
 - [x] `swift-format lint --strict` clean
-- [ ] CI green
+- [ ] CI green _(pending the remote workflow run for these changes)_

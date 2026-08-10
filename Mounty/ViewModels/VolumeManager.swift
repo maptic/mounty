@@ -10,6 +10,7 @@ final class VolumeManager {
     var volumes: [Volume] = []
     var mountPaths: [UUID: String] = [:]
     var busyVolumes: Set<UUID> = []
+    private(set) var isClearingVolumes = false
 
     // UI Controls
     var searchText = ""
@@ -109,6 +110,10 @@ final class VolumeManager {
         volumes.first { $0.id == speedTestVolumeId }?.name ?? "Volume"
     }
 
+    var hasActiveVolumeOperations: Bool {
+        isClearingVolumes || !busyVolumes.isEmpty || isRunningSpeedTest
+    }
+
     enum SortOrder: String, CaseIterable {
         case name = "Name"
         case dateAdded = "Date Added"
@@ -150,6 +155,9 @@ final class VolumeManager {
     // MARK: - Speed Test
 
     func runSpeedTest(for volume: Volume) {
+        guard !isClearingVolumes, !busyVolumes.contains(volume.id), !isRunningSpeedTest else {
+            return
+        }
         guard let path = mountPaths[volume.id] else { return }
         speedTestVolumeId = volume.id
         isRunningSpeedTest = true
@@ -256,7 +264,7 @@ final class VolumeManager {
     // MARK: - Logic
 
     private func runAutomount() async {
-        guard isNetworkUp else { return }
+        guard isNetworkUp, !isClearingVolumes else { return }
 
         let candidates = volumes.filter {
             $0.isAutomountEnabled && mountPaths[$0.id] == nil && !busyVolumes.contains($0.id)
@@ -406,6 +414,7 @@ final class VolumeManager {
     }
 
     func mount(_ volume: Volume) {
+        guard !isClearingVolumes, !busyVolumes.contains(volume.id) else { return }
         guard let url = URL(string: volume.serverAddress) else { return }
         busyVolumes.insert(volume.id)
         log("Connecting \(volume.name)…")
@@ -451,6 +460,7 @@ final class VolumeManager {
     }
 
     func unmount(_ volume: Volume) {
+        guard !isClearingVolumes, !busyVolumes.contains(volume.id) else { return }
         disableAutomount(for: volume)
         guard let path = mountPaths[volume.id] else { return }
 
@@ -485,6 +495,7 @@ final class VolumeManager {
     // MARK: - Persistence
 
     func addVolume(_ volume: Volume) {
+        guard !isClearingVolumes else { return }
         volumes.append(volume)
         storage.saveVolumes(volumes)
         log("Added volume: \(volume.name)")
@@ -492,6 +503,8 @@ final class VolumeManager {
     }
 
     func removeVolume(_ id: UUID) {
+        guard !isClearingVolumes, !busyVolumes.contains(id) else { return }
+        guard speedTestVolumeId != id || !isRunningSpeedTest else { return }
         guard let volume = volumes.first(where: { $0.id == id }) else { return }
         guard let path = mountPaths[id] else {
             removeVolumeConfiguration(id: id, name: volume.name)
@@ -515,6 +528,8 @@ final class VolumeManager {
     }
 
     func editVolume(id: UUID, name: String, serverAddress: String) {
+        guard !isClearingVolumes, !busyVolumes.contains(id) else { return }
+        guard speedTestVolumeId != id || !isRunningSpeedTest else { return }
         guard let idx = volumes.firstIndex(where: { $0.id == id }) else { return }
         let old = volumes[idx]
         let addressChanged = old.serverAddress != serverAddress
@@ -573,13 +588,22 @@ final class VolumeManager {
     }
 
     func clearAllVolumes() {
+        guard !hasActiveVolumeOperations else {
+            lastError = "Wait for active volume operations to finish before clearing."
+            showError = true
+            return
+        }
+
+        isClearingVolumes = true
         let configuredVolumes = volumes
+        let configuredIDs = Set(configuredVolumes.map(\.id))
         let mountedVolumes = configuredVolumes.compactMap { volume in
             mountPaths[volume.id].map { (volume, $0) }
         }
         for (volume, _) in mountedVolumes { busyVolumes.insert(volume.id) }
 
         Task {
+            defer { self.isClearingVolumes = false }
             var retainedIDs = Set<UUID>()
             for (volume, path) in mountedVolumes {
                 guard await MountService.unmount(path: path) else {
@@ -590,7 +614,9 @@ final class VolumeManager {
                 self.mountPaths.removeValue(forKey: volume.id)
                 self.busyVolumes.remove(volume.id)
             }
-            self.volumes.removeAll { !retainedIDs.contains($0.id) }
+            self.volumes.removeAll {
+                configuredIDs.contains($0.id) && !retainedIDs.contains($0.id)
+            }
             self.storage.saveVolumes(self.volumes)
             if retainedIDs.isEmpty {
                 self.log("Cleared all volumes")
@@ -615,6 +641,7 @@ final class VolumeManager {
     }
 
     func toggleAutomount(_ id: UUID) {
+        guard !isClearingVolumes, !busyVolumes.contains(id) else { return }
         if let idx = volumes.firstIndex(where: { $0.id == id }) {
             volumes[idx].isAutomountEnabled.toggle()
             storage.saveVolumes(volumes)
@@ -659,19 +686,15 @@ final class VolumeManager {
                     try Data(contentsOf: url)
                 }.value
                 let importedVolumes = try JSONDecoder().decode([Volume].self, from: data)
-                var count = 0
-                for volume in importedVolumes {
-                    if !self.volumes.contains(where: {
-                        $0.serverAddress == volume.serverAddress
-                    }) {
-                        self.volumes.append(volume)
-                        count += 1
-                    }
-                }
+                let result = VolumeConfigurationService.merging(
+                    importedVolumes,
+                    into: self.volumes
+                )
+                self.volumes = result.volumes
                 self.storage.saveVolumes(self.volumes)
                 await self.refreshState()
-                self.log("Imported \(count) volume(s) from backup")
-                self.successMessage = "Imported \(count) volumes successfully."
+                self.log("Imported \(result.importedCount) volume(s) from backup")
+                self.successMessage = "Imported \(result.importedCount) volumes successfully."
                 self.showSuccess = true
             } catch {
                 self.log("Import failed: \(error.localizedDescription)", level: .error)

@@ -81,6 +81,7 @@ struct SettingsView: View {
                                     .foregroundColor(.red)
                             }
                             .iconButtonHover(cornerRadius: 6, padding: 6)
+                            .disabled(manager.hasActiveVolumeOperations)
                             .help("Clear all volumes")
                         }
                         .listRowBackground(Color.clear)

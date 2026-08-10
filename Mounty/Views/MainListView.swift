@@ -205,7 +205,7 @@ struct MainListView: View {
             // .transaction suppressor prevents it from animating along.
             .animation(.easeOut(duration: 0.18), value: isSearchVisible)
             .blur(radius: manager.showError ? 2 : 0)
-            .disabled(manager.showError)
+            .disabled(manager.showError || manager.isClearingVolumes)
 
             if manager.showError {
                 AlertOverlay(

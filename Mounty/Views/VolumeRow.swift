@@ -63,6 +63,7 @@ struct VolumeRow: View {
                     volume.isAutomountEnabled
                         ? "Disable Automount" : "Enable Automount"
                 )
+                .disabled(isBusy || isTesting || manager.isClearingVolumes)
 
                 // 2. Open in Finder (Only when mounted)
                 if isMounted {
@@ -133,6 +134,7 @@ struct VolumeRow: View {
             } label: {
                 Label("Edit Volume…", systemImage: "pencil")
             }
+            .disabled(isBusy || isTesting || manager.isClearingVolumes)
 
             if isMounted {
                 Button {
@@ -140,7 +142,7 @@ struct VolumeRow: View {
                 } label: {
                     Label("Measure Speed…", systemImage: "speedometer")
                 }
-                .disabled(manager.isRunningSpeedTest)
+                .disabled(isBusy || manager.isRunningSpeedTest || manager.isClearingVolumes)
             }
 
             Divider()
@@ -150,6 +152,7 @@ struct VolumeRow: View {
             } label: {
                 Label("Remove Volume", systemImage: "trash")
             }
+            .disabled(isBusy || isTesting || manager.isClearingVolumes)
         }
     }
 }

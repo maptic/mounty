@@ -4,6 +4,9 @@ Newest stories first. Statuses: `OPEN`, `IN_PROGRESS`, `CLOSED`.
 
 | ID | Type | Story | Status | Date |
 | --- | --- | --- | --- | --- |
+| [012](./012-ci-warning-enforcement.md) | ci | CI warning enforcement | CLOSED | 2026-08-10 |
+| [011](./011-import-volume-identity.md) | fix | Import volume identity integrity | CLOSED | 2026-08-10 |
+| [010](./010-volume-operation-safety.md) | fix | Volume operation safety | CLOSED | 2026-08-10 |
 | [009](./009-mount-lifecycle-cleanup.md) | fix | Mount lifecycle cleanup and failure handling | CLOSED | 2026-08-10 |
 | [008](./008-mount-reliability-and-logging.md) | fix | Reliable mounting and unified logging | CLOSED | 2026-08-10 |
 | [007](./007-modern-swift-and-mount-state.md) | refactor | Modern Swift and accurate mount state | CLOSED | 2026-08-09 |

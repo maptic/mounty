@@ -4,7 +4,7 @@ Newest stories first. Statuses: `OPEN`, `IN_PROGRESS`, `CLOSED`.
 
 | ID | Type | Story | Status | Date |
 | --- | --- | --- | --- | --- |
-| [024](./024-homebrew-tap-distribution.md) | ci | Homebrew tap distribution | IN_PROGRESS | 2026-08-10 |
+| [024](./024-homebrew-tap-distribution.md) | ci | Homebrew tap distribution | CLOSED | 2026-08-10 |
 | [023](./023-readme-logo-visual-alignment.md) | fix | README logo visual alignment | CLOSED | 2026-08-10 |
 | [022](./022-documentation-source-artwork.md) | docs | Documentation source artwork | CLOSED | 2026-08-10 |
 | [021](./021-readme-logo-alignment.md) | fix | README logo alignment | CLOSED | 2026-08-10 |

@@ -1,6 +1,6 @@
 <div align="center">
 
-<h1><img src="./docs/assets/logo.png" alt="Mounty logo" width="44" align="absmiddle" /> Mounty</h1>
+<h1><img src="./docs/assets/logo-readme.svg" alt="Mounty logo" width="50" align="absmiddle" /> Mounty</h1>
 
 **A tiny macOS menu-bar app that keeps your SMB network shares mounted — automatically.**
 

@@ -86,6 +86,25 @@ Versioning and releases are **fully automated** by `release-please` from commit 
 `feat:` → minor, `fix:` → patch, `feat!:`/`BREAKING CHANGE:` → major; `docs/chore/refactor/test/ci`
 → no release.
 
+### Release pipeline
+
+```
+push to main → release-please PR → merge → tag vX.Y.Z + GitHub Release
+                                             │
+                                             ├─ release-build.yml: DMG (+ notarization) → release assets
+                                             └─ repository_dispatch "cask-release" → maptic/homebrew-tap
+                                                                                     bumps Casks/mounty.rb
+```
+
+`release-build.yml` is **called by** `release-please.yml`, not triggered by the `release: published`
+event — a release created with the default `GITHUB_TOKEN` does not emit that event. To re-package a
+tag by hand: `gh workflow run release-build.yml -f tag=vX.Y.Z`.
+
+The cask bump needs `HOMEBREW_TAP_TOKEN` (a fine-grained PAT with `contents: write` on
+`maptic/homebrew-tap`) in this repository's secrets; without it the release still succeeds and only
+the tap bump is skipped. The tap re-computes the `sha256` from the published asset itself, so the
+dispatch payload carries just the cask token and the version.
+
 ### Mandatory model attribution for agent commits
 
 Any commit you create as an AI agent MUST include a `Generated-by:` git trailer naming the exact

@@ -11,10 +11,28 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       # Opens/updates a release PR based on Conventional Commits. Merging that PR
-      # creates the git tag + GitHub Release, which triggers release-build.yml.
+      # creates the git tag + GitHub Release.
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  # A release created with the default GITHUB_TOKEN does NOT emit a
+  # `release: published` event, so the build is chained explicitly here instead
+  # of relying on that trigger.
+  release-build:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-build.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+    secrets: inherit

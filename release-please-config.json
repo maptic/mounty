@@ -9,6 +9,7 @@
       "draft": false,
       "prerelease": false,
       "include-v-in-tag": true,
+      "include-component-in-tag": false,
       "extra-files": [
         "version.txt"
       ]

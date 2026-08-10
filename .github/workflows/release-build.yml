@@ -1,9 +1,24 @@
 name: Release Build
 
-# Fires when release-please's PR is merged and it publishes a GitHub Release.
+# Builds, signs and packages the DMG for a tag, attaches it to the matching
+# GitHub Release, and asks maptic/homebrew-tap to bump its cask.
+#
+# Called by release-please.yml right after it cuts a release (a release created
+# with the default GITHUB_TOKEN does not emit a `release: published` event), and
+# runnable by hand for a tag that needs re-packaging.
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to build, e.g. v1.2.3
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build, e.g. v1.2.3
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -11,12 +26,16 @@ permissions:
 jobs:
   build-dmg:
     runs-on: macos-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     env:
-      TAG: ${{ github.event.release.tag_name }}
+      TAG: ${{ inputs.tag }}
       # 'true' only when Developer-ID signing secrets are configured.
       HAS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -101,40 +120,27 @@ jobs:
           gh release upload "$TAG" \
             "Mounty-$VERSION.dmg" "Mounty-$VERSION.dmg.sha256" --clobber
 
-      # -------- Homebrew cask --------
-      - name: Update Homebrew cask
+  # -------- Homebrew cask --------
+  # The tap owns the cask: it renders the download URL, re-computes the sha256
+  # from the published asset and commits the bump itself. Requires
+  # HOMEBREW_TAP_TOKEN — a fine-grained PAT with `contents: write` on
+  # maptic/homebrew-tap. Without it the release still succeeds, only unbumped.
+  update-tap:
+    needs: build-dmg
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Dispatch cask-release to maptic/homebrew-tap
         env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          VERSION: ${{ steps.ver.outputs.version }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ needs.build-dmg.outputs.version }}
         run: |
-          if [ -z "${TAP_TOKEN:-}" ]; then
-            echo "HOMEBREW_TAP_TOKEN not set; skipping cask update."
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN not set; skipping the Homebrew cask bump."
             exit 0
           fi
-          SHA=$(shasum -a 256 "Mounty-$VERSION.dmg" | awk '{print $1}')
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/maptic/homebrew-tap.git" tap
-          mkdir -p tap/Casks
-          cat > tap/Casks/mounty.rb <<EOF
-          cask "mounty" do
-            version "$VERSION"
-            sha256 "$SHA"
-
-            url "https://github.com/maptic/mounty/releases/download/v#{version}/Mounty-#{version}.dmg"
-            name "Mounty"
-            desc "Menu-bar app that keeps SMB network shares mounted automatically"
-            homepage "https://github.com/maptic/mounty"
-
-            depends_on macos: ">= :tahoe"
-
-            app "Mounty.app"
-
-            zap trash: "~/Library/Preferences/ch.maptic.Mounty.plist"
-          end
-          EOF
-
-          cd tap
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Casks/mounty.rb
-          git commit -m "chore: update mounty to $VERSION"
-          git push
+          jq -n --arg version "$VERSION" \
+            '{event_type: "cask-release", client_payload: {cask: "mounty", version: $version}}' \
+            | gh api repos/maptic/homebrew-tap/dispatches --input -
+          echo "::notice::Requested cask bump to $VERSION in maptic/homebrew-tap."

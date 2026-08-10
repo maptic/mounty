@@ -1,6 +1,5 @@
 import Network
 import SwiftUI
-import os
 
 /// ViewModel: Orchestrates detection logic, automounting, state management, and data persistence.
 @MainActor
@@ -31,6 +30,7 @@ class VolumeManager {
 
     // In-app log buffer (capped at maxLogEntries)
     var logEntries: [LogEntry] = []
+    var minimumLogLevel: LogEntry.Level
 
     // Speed test state
     var speedTestVolumeId: UUID? = nil
@@ -45,12 +45,6 @@ class VolumeManager {
     private let storage = PersistenceService()
     private let eventMonitor = EventMonitorService()
 
-    // Logger (os.Logger for Console.app; log() also feeds the in-app ring buffer)
-    private let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "Mounty",
-        category: "Manager"
-    )
-
     private let knownTerminals = [
         ("Terminal", "com.apple.Terminal"),
         ("iTerm2", "com.googlecode.iterm2"),
@@ -63,7 +57,9 @@ class VolumeManager {
     init() {
         self.volumes = storage.loadVolumes()
         self.preferredTerminal = storage.loadTerminalBundleID()
+        self.minimumLogLevel = storage.loadMinimumLogLevel()
 
+        startLogObservation()
         startEventObservation()
         refreshInstalledTerminals()
 
@@ -125,17 +121,29 @@ class VolumeManager {
     // MARK: - Logging
 
     private func log(_ message: String, level: LogEntry.Level = .info) {
-        switch level {
-        case .info: logger.info("\(message, privacy: .public)")
-        case .warning: logger.warning("\(message, privacy: .public)")
-        case .error: logger.error("\(message, privacy: .public)")
+        AppLogger.log(message, level: level, source: .manager)
+    }
+
+    private func startLogObservation() {
+        Task { [weak self] in
+            for await entry in AppLogger.entries {
+                guard let self else { break }
+                logEntries.append(entry)
+                if logEntries.count > maxLogEntries {
+                    logEntries.removeFirst(logEntries.count - maxLogEntries)
+                }
+            }
         }
-        logEntries.append(LogEntry(timestamp: Date(), level: level, message: message))
-        if logEntries.count > maxLogEntries { logEntries.removeFirst() }
     }
 
     func clearLogs() {
         logEntries.removeAll()
+        AppLogger.clearHistory()
+    }
+
+    func setMinimumLogLevel(_ level: LogEntry.Level) {
+        minimumLogLevel = level
+        storage.saveMinimumLogLevel(level)
     }
 
     // MARK: - Speed Test
@@ -177,14 +185,14 @@ class VolumeManager {
     // MARK: - Event Observation
 
     private func startEventObservation() {
-        // All tasks below inherit @MainActor from this context. They suspend at each
-        // `for await`, releasing the main actor between events. The actual I/O work is
-        // dispatched off-actor inside refreshState() and runAutomount() via Task.detached.
+        // The observer tasks inherit MainActor and release it at each `for await` suspension.
+        // Services move kernel, network, and filesystem work off the actor.
 
         // 1. Network Status — high-priority reaction
+        let networkStatusStream = eventMonitor.networkStatusStream
         Task { [weak self] in
-            guard let self else { return }
-            for await status in eventMonitor.networkStatusStream {
+            for await status in networkStatusStream {
+                guard let self else { break }
                 let wasUp = isNetworkUp
                 isNetworkUp = (status == .satisfied)
                 if isNetworkUp != wasUp {
@@ -196,9 +204,10 @@ class VolumeManager {
         }
 
         // 2. Interface changes (VPN) — debounce applied in EventMonitorService
+        let interfacesChangedStream = eventMonitor.interfacesChangedStream
         Task { [weak self] in
-            guard let self else { return }
-            for await _ in eventMonitor.interfacesChangedStream {
+            for await _ in interfacesChangedStream {
+                guard let self else { break }
                 log("Network interface changed — retrying connections")
                 await refreshState()
                 await runAutomount()
@@ -206,9 +215,10 @@ class VolumeManager {
         }
 
         // 3. File system (manual mounts by other apps)
+        let fileSystemChangedStream = eventMonitor.fileSystemChangedStream
         Task { [weak self] in
-            guard let self else { return }
-            for await _ in eventMonitor.fileSystemChangedStream {
+            for await _ in fileSystemChangedStream {
+                guard let self else { break }
                 await refreshState()
             }
         }
@@ -222,6 +232,7 @@ class VolumeManager {
                 guard let self else { break }
                 guard isNetworkUp else { continue }
                 await refreshState()
+                await runAutomount()
             }
         }
     }
@@ -235,32 +246,53 @@ class VolumeManager {
             $0.isAutomountEnabled && mountPaths[$0.id] == nil && !busyVolumes.contains($0.id)
         }
         guard !candidates.isEmpty else { return }
+        log(
+            "Automount: \(candidates.count) candidate(s) — \(candidates.map(\.name).joined(separator: ", "))",
+            level: .debug
+        )
         for v in candidates { busyVolumes.insert(v.id) }
 
-        await withTaskGroup(of: (UUID, String?, String).self) { group in
+        let reachableIDs = await withTaskGroup(of: (UUID, Bool).self) { group in
             for volume in candidates {
-                guard let url = URL(string: volume.serverAddress) else {
-                    busyVolumes.remove(volume.id)
-                    continue
-                }
-                let addr = volume.serverAddress
-                let name = volume.name
                 let id = volume.id
                 group.addTask {
-                    let isReachable = await ReachabilityService.isServerReachable(address: addr)
-                    guard isReachable else { return (id, nil, name) }
-                    return (id, await MountService.mount(url: url), name)
+                    let reachable = await ReachabilityService.isServerReachable(
+                        address: volume.serverAddress
+                    )
+                    return (id, reachable)
                 }
             }
 
-            for await (id, path, name) in group {
-                if let path {
-                    self.mountPaths[id] = path
-                    log("Automounted \(name) → \(path)")
-                } else {
-                    log("Automount failed for \(name)", level: .warning)
-                }
-                busyVolumes.remove(id)
+            var ids = Set<UUID>()
+            for await (id, reachable) in group where reachable {
+                ids.insert(id)
+            }
+            return ids
+        }
+
+        // Multiple simultaneous NetFS authentication sessions can interfere with one another,
+        // so only the inexpensive TCP probes are parallelized. Mount requests run one at a time.
+        for volume in candidates {
+            defer { busyVolumes.remove(volume.id) }
+
+            guard reachableIDs.contains(volume.id) else {
+                log("Automount skipped: \(volume.name); SMB port 445 is unreachable", level: .info)
+                continue
+            }
+            guard let url = URL(string: volume.serverAddress) else {
+                log("Automount skipped: \(volume.name); invalid server URL", level: .error)
+                continue
+            }
+
+            let result = await MountService.mount(url: url)
+            if let path = result.path {
+                mountPaths[volume.id] = path
+                log("Automounted: \(volume.name) → \(path)")
+            } else {
+                log(
+                    "Automount failed: \(volume.name); \(result.debugDescription)",
+                    level: .warning
+                )
             }
         }
     }
@@ -268,6 +300,7 @@ class VolumeManager {
     func refreshState() async {
         let currentVolumes = self.volumes
         let networkAvailable = self.isNetworkUp
+        let prevPaths = self.mountPaths
 
         // NOTE: Task inherits priority from the caller.
         // Events call this with .userInitiated (Fast).
@@ -278,6 +311,12 @@ class VolumeManager {
                 isNetworkUp: networkAvailable
             )
         }.value
+
+        // Log volumes that disappeared from the kernel mount table since last check.
+        for (id, _) in prevPaths where newPaths[id] == nil {
+            let name = currentVolumes.first(where: { $0.id == id })?.name ?? id.uuidString
+            log("Lost connection: \(name)")
+        }
 
         // Plain assignment — no withAnimation here. Background-triggered state
         // changes must not inject an animation transaction that could delay
@@ -304,11 +343,11 @@ class VolumeManager {
                         for: volume,
                         in: systemMounts
                     ) {
-                        // 1. TCP Reachability (Fastest fail for dropped VPNs)
+                        // 1. TCP Reachability (fastest fail for dropped VPNs)
                         if await ReachabilityService.isServerReachable(
                             address: volume.serverAddress
                         ) {
-                            // 2. IO Reachability (Catches hung kernel mounts)
+                            // 2. IO Reachability (catches hung kernel mounts)
                             if await ReachabilityService.isMountPointAlive(path: path) {
                                 return (volume.id, path)
                             }
@@ -352,14 +391,39 @@ class VolumeManager {
         log("Connecting \(volume.name)…")
 
         Task {
-            if let path = await MountService.mount(url: url) {
+            // Fail fast: surface an unreachable server immediately rather than
+            // burning 90 s on a NetFS call that will never complete.
+            let reachable = await ReachabilityService.isServerReachable(
+                address: volume.serverAddress
+            )
+            guard reachable else {
+                let host = URL(string: volume.serverAddress)?.host ?? "unknown-host"
+                log(
+                    "SMB probe failed: \(volume.name); host=\(host); port=445",
+                    level: .debug
+                )
+                self.lastError = "Cannot reach \(volume.name). Check network and VPN."
+                self.showError = true
+                self.log("Not reachable: \(volume.name)", level: .error)
+                self.busyVolumes.remove(volume.id)
+                return
+            }
+
+            let result = await MountService.mount(url: url)
+            log("NetFS: \(volume.name) — \(result.debugDescription)", level: .debug)
+
+            switch result {
+            case .success(let path):
                 self.mountPaths[volume.id] = path
                 self.log("Connected: \(volume.name) → \(path)")
-            } else {
+            case .failed(let code):
                 self.lastError =
-                    "Connection failed. Verify address and keychain credentials."
+                    "Connection failed for \(volume.name) (error \(code))."
                 self.showError = true
-                self.log("Connection failed: \(volume.name)", level: .error)
+                self.log(
+                    "Failed: \(volume.name); \(result.debugDescription)",
+                    level: .error
+                )
             }
             self.busyVolumes.remove(volume.id)
             await self.refreshState()
@@ -435,7 +499,9 @@ class VolumeManager {
                 self.busyVolumes.remove(id)
                 return
             }
-            if let newPath = await MountService.mount(url: url) {
+            let result = await MountService.mount(url: url)
+            self.log("Reconnect: \(name) — \(result.debugDescription)", level: .debug)
+            if let newPath = result.path {
                 self.mountPaths[id] = newPath
                 self.log("Reconnected \(name) → \(newPath)")
             } else {

@@ -30,4 +30,17 @@ struct PersistenceServiceTests {
         let sut = PersistenceService(defaults: defaults)
         #expect(sut.loadVolumes().isEmpty)
     }
+
+    @Test func savesAndLoadsMinimumLogLevel() {
+        let suiteName = "MountyTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let sut = PersistenceService(defaults: defaults)
+        #expect(sut.loadMinimumLogLevel() == .info)
+
+        sut.saveMinimumLogLevel(.warning)
+
+        #expect(sut.loadMinimumLogLevel() == .warning)
+    }
 }

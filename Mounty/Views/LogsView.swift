@@ -4,6 +4,10 @@ struct LogsView: View {
     var manager: VolumeManager
     @Binding var viewMode: AppViewMode
 
+    private var visibleEntries: [LogEntry] {
+        manager.logEntries.filter { $0.level >= manager.minimumLogLevel }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HeaderView(
@@ -13,13 +17,13 @@ struct LogsView: View {
 
             Divider()
 
-            if manager.logEntries.isEmpty {
+            if visibleEntries.isEmpty {
                 VStack(spacing: 8) {
                     Spacer()
                     Image(systemName: "doc.text")
                         .font(.system(size: 28))
                         .foregroundColor(.secondary.opacity(0.5))
-                    Text("No Log Entries")
+                    Text(manager.logEntries.isEmpty ? "No Log Entries" : "No Entries at This Level")
                         .font(.callout)
                         .foregroundColor(.secondary)
                     Spacer()
@@ -29,7 +33,7 @@ struct LogsView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(manager.logEntries) { entry in
+                            ForEach(visibleEntries) { entry in
                                 LogEntryRow(entry: entry)
                             }
                             Color.clear.frame(height: 1).id("logsBottom")
@@ -37,7 +41,7 @@ struct LogsView: View {
                         .padding(.vertical, 4)
                     }
                     .frame(height: 200)
-                    .onChange(of: manager.logEntries.count) { _, _ in
+                    .onChange(of: visibleEntries.count) { _, _ in
                         proxy.scrollTo("logsBottom", anchor: .bottom)
                     }
                     .onAppear {
@@ -61,19 +65,46 @@ struct LogsView: View {
 
                 Spacer()
 
+                Menu {
+                    ForEach(LogEntry.Level.allCases, id: \.self) { level in
+                        Button {
+                            manager.setMinimumLogLevel(level)
+                        } label: {
+                            HStack {
+                                if manager.minimumLogLevel == level {
+                                    Image(systemName: "checkmark")
+                                }
+                                Text(level.label)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "line.3.horizontal.decrease")
+                        Text(manager.minimumLogLevel.label)
+                    }
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Minimum log level to display")
+
+                Spacer()
+
                 Button {
-                    let text = manager.logEntries.map { $0.formatted }.joined(separator: "\n")
+                    let text = visibleEntries.map { $0.formatted }.joined(separator: "\n")
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
                 } label: {
-                    Label("Copy All", systemImage: "doc.on.doc")
+                    Label("Copy", systemImage: "doc.on.doc")
                         .font(.system(size: 12))
                         .foregroundColor(
-                            manager.logEntries.isEmpty ? .secondary.opacity(0.4) : .secondary)
+                            visibleEntries.isEmpty ? .secondary.opacity(0.4) : .secondary)
                 }
                 .iconButtonHover(cornerRadius: 5, padding: 4)
-                .disabled(manager.logEntries.isEmpty)
-                .help("Copy all logs to clipboard")
+                .disabled(visibleEntries.isEmpty)
+                .help("Copy visible log entries to clipboard")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -100,9 +131,12 @@ private struct LogEntryRow: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text(entry.timestamp.formatted(.dateTime.hour().minute().second()))
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
+                Text(
+                    "\(entry.source.label) · "
+                        + entry.timestamp.formatted(.dateTime.hour().minute().second())
+                )
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
             }
         }
         .padding(.horizontal, 12)

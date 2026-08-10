@@ -1,7 +1,6 @@
 import AppKit
 import Foundation
 import Network
-import os
 
 /// Monitors OS events and exposes them as async sequences.
 class EventMonitorService {
@@ -19,11 +18,6 @@ class EventMonitorService {
     // Written and read exclusively on monitorQueue — nonisolated(unsafe) bypasses the
     // implicit @MainActor isolation without requiring an @unchecked Sendable wrapper.
     private nonisolated(unsafe) var lastInterfaceFingerprint = ""
-    private let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "Mounty",
-        category: "EventMonitor"
-    )
-
     init() {
         (networkStatusStream, networkStatusContinuation) = AsyncStream.makeStream(
             of: NWPath.Status.self, bufferingPolicy: .bufferingNewest(1)
@@ -49,7 +43,11 @@ class EventMonitorService {
                 .joined(separator: ",")
 
             if currentInterfaces != lastInterfaceFingerprint {
-                logger.debug("Interface topology changed: \(currentInterfaces, privacy: .public)")
+                AppLogger.log(
+                    "Interface topology changed: \(currentInterfaces)",
+                    level: .debug,
+                    source: .eventMonitor
+                )
                 lastInterfaceFingerprint = currentInterfaces
                 // 1-second debounce: let the interface topology settle before
                 // triggering a reconnect attempt.
@@ -70,7 +68,11 @@ class EventMonitorService {
             NSWorkspace.didRenameVolumeNotification,
         ] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                self?.logger.debug("Kernel filesystem event received")
+                AppLogger.log(
+                    "Kernel filesystem event received: \(name.rawValue)",
+                    level: .debug,
+                    source: .eventMonitor
+                )
                 self?.fileSystemChangedContinuation.yield()
             }
         }

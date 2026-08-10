@@ -4,6 +4,10 @@ import SwiftUI
 @MainActor
 struct MountyApp: App {
 
+    private var isRunningTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
     private static let paddedIcon: NSImage = {
         guard let image = NSImage(named: "MenuIcon") else { return NSImage() }
 
@@ -19,7 +23,11 @@ struct MountyApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            RootView()
+            if isRunningTests {
+                EmptyView()
+            } else {
+                RootView()
+            }
         } label: {
             Image(nsImage: Self.paddedIcon)
         }

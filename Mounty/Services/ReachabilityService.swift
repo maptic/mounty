@@ -4,6 +4,7 @@ import Network
 
 /// Verifies server and mount point responsiveness.
 struct ReachabilityService {
+    nonisolated private static let mountProbes = MountProbeRegistry()
 
     /// Validates filesystem responsiveness by calling statfs(2) on the mount path.
     ///
@@ -15,32 +16,45 @@ struct ReachabilityService {
     /// Async: dispatches statfs to a background thread so the Swift cooperative
     /// thread pool is never blocked waiting for a hung mount.
     nonisolated static func isMountPointAlive(path: String) async -> Bool {
-        await withCheckedContinuation { continuation in
-            let gate = ResumeGate()
+        return await withCheckedContinuation { continuation in
+            guard mountProbes.register(path: path, continuation: continuation) else { return }
 
-            DispatchQueue.global(qos: .userInteractive).async {
+            DispatchQueue.global(qos: .utility).async {
+                defer { mountProbes.finish(path: path) }
                 // Allocate uninitialized memory instead of calling statfs.init(),
                 // which is @MainActor under SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor.
                 // The C statfs(2) syscall writes the struct entirely so zero-init
                 // is unnecessary and the @MainActor init can be bypassed safely.
                 let buf = UnsafeMutablePointer<statfs>.allocate(capacity: 1)
                 defer { buf.deallocate() }
-                let alive = statfs(path, buf) == 0
-                if gate.tryResume() {
-                    continuation.resume(returning: alive)
+                let status = statfs(path, buf)
+                let errorCode = errno
+                let alive = status == 0
+                if mountProbes.resolve(path: path, result: alive) {
+                    if !alive {
+                        AppLogger.log(
+                            "Mount probe failed: \(path); errno=\(errorCode): \(String(cString: strerror(errorCode)))",
+                            level: .warning,
+                            source: .reachability
+                        )
+                    }
                 }
             }
 
             DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
-                if gate.tryResume() {
-                    continuation.resume(returning: false)
+                if mountProbes.resolve(path: path, result: false) {
+                    AppLogger.log(
+                        "Mount probe timed out after 1 s: \(path)",
+                        level: .warning,
+                        source: .reachability
+                    )
                 }
             }
         }
     }
 
     /// Validates TCP connectivity to SMB port (445).
-    static func isServerReachable(address: String) async -> Bool {
+    nonisolated static func isServerReachable(address: String) async -> Bool {
         guard let host = URL(string: address)?.host else { return false }
 
         return await withCheckedContinuation { continuation in
@@ -59,6 +73,11 @@ struct ReachabilityService {
             DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
                 if gate.tryResume() {
                     conn.cancel()
+                    AppLogger.log(
+                        "SMB probe timed out: host=\(host); port=445; timeout=2 s",
+                        level: .debug,
+                        source: .reachability
+                    )
                     continuation.resume(returning: false)
                 }
             }
@@ -70,7 +89,16 @@ struct ReachabilityService {
                         conn.cancel()
                         continuation.resume(returning: true)
                     }
-                case .failed, .cancelled:
+                case .failed(let error):
+                    if gate.tryResume() {
+                        AppLogger.log(
+                            "SMB probe failed: host=\(host); port=445; error=\(error)",
+                            level: .debug,
+                            source: .reachability
+                        )
+                        continuation.resume(returning: false)
+                    }
+                case .cancelled:
                     if gate.tryResume() {
                         continuation.resume(returning: false)
                     }
@@ -82,8 +110,65 @@ struct ReachabilityService {
     }
 }
 
+private final class MountProbeRegistry: @unchecked Sendable {
+    private struct ProbeState {
+        var result: Bool?
+        var waiters: [CheckedContinuation<Bool, Never>]
+    }
+
+    private let lock = NSLock()
+    private nonisolated(unsafe) var probes: [String: ProbeState] = [:]
+
+    /// Registers a caller and returns true only when it must start the underlying syscall.
+    nonisolated func register(
+        path: String,
+        continuation: CheckedContinuation<Bool, Never>
+    ) -> Bool {
+        var immediateResult: Bool?
+        let shouldStart = lock.withLock {
+            guard var state = probes[path] else {
+                probes[path] = ProbeState(result: nil, waiters: [continuation])
+                return true
+            }
+            if let result = state.result {
+                immediateResult = result
+            } else {
+                state.waiters.append(continuation)
+                probes[path] = state
+            }
+            return false
+        }
+        if let immediateResult {
+            continuation.resume(returning: immediateResult)
+        }
+        return shouldStart
+    }
+
+    /// Resolves all current and future waiters while the non-cancellable syscall remains active.
+    @discardableResult
+    nonisolated func resolve(path: String, result: Bool) -> Bool {
+        let waiters: [CheckedContinuation<Bool, Never>]? = lock.withLock {
+            guard var state = probes[path], state.result == nil else { return nil }
+            state.result = result
+            let waiters = state.waiters
+            state.waiters.removeAll()
+            probes[path] = state
+            return waiters
+        }
+        guard let waiters else { return false }
+        for continuation in waiters {
+            continuation.resume(returning: result)
+        }
+        return true
+    }
+
+    nonisolated func finish(path: String) {
+        lock.withLock { _ = probes.removeValue(forKey: path) }
+    }
+}
+
 /// Single-use boolean flag protected by NSLock; safe to share across @Sendable closures.
-private final class ResumeGate: @unchecked Sendable {
+final class ResumeGate: @unchecked Sendable {
     private let lock = NSLock()
     // nonisolated(unsafe): opts out of implicit @MainActor isolation;
     // thread safety is guaranteed by `lock`.

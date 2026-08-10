@@ -3,98 +3,180 @@ import Darwin
 import Foundation
 import NetFS
 import ServiceManagement
-import os
 
 /// Action Service.
 struct MountService {
 
-    // MARK: - Logger
-    nonisolated private static let logger = Logger(
-        subsystem: "Mounty",
-        category: "MountService"
-    )
+    // MARK: - Mount Result
+
+    enum MountResult: Sendable {
+        case success(path: String)
+        case failed(code: Int32)
+
+        nonisolated var path: String? {
+            if case .success(let p) = self { return p }
+            return nil
+        }
+
+        nonisolated var debugDescription: String {
+            switch self {
+            case .success(let p): return "success → \(p)"
+            case .failed(let code):
+                let detail =
+                    code > 0
+                    ? String(cString: strerror(code))
+                    : NSError(domain: NSOSStatusErrorDomain, code: Int(code)).localizedDescription
+                return "NetFS error \(code): \(detail)"
+            }
+        }
+    }
 
     // MARK: - Mounting
 
-    /// Mounts network share via NetFSMountURLSync.
-    /// Returns the mount path if successful, nil otherwise.
-    static func mount(url: URL) async -> String? {
-        await Task.detached(priority: .userInitiated) {
-
-            // 1. Check if already mounted
-            if let existing = SystemMountService.findMountPath(forURL: url) {
-                logger.info(
-                    "Share already mounted: \(url.absoluteString) -> \(existing)"
+    /// Mounts a network share with NetFS without blocking MainActor.
+    nonisolated static func mount(url: URL) async -> MountResult {
+        if let existing = await Task.detached(
+            priority: .userInitiated,
+            operation: {
+                SystemMountService.findMountPath(forURL: url)
+            }
+        ).value {
+            if await ReachabilityService.isMountPointAlive(path: existing) {
+                AppLogger.log(
+                    "Mount skipped; already mounted and responsive: \(mountTarget(for: url)) -> \(existing)",
+                    source: .mountService
                 )
-                return existing
+                return .success(path: existing)
             }
 
-            var mountpoints: Unmanaged<CFArray>? = nil
-            let cfUrl = url as CFURL
-
-            let openOptions: [String: Any] = [
-                "AllowUserInteraction": true, "NoMountOnDir": true,
-            ]
-            let mutableOpenOptions = CFDictionaryCreateMutableCopy(
-                nil,
-                0,
-                openOptions as CFDictionary
+            AppLogger.log(
+                "Existing mount is unresponsive: \(existing); unmounting before retry",
+                level: .warning,
+                source: .mountService
             )
-
-            let result = NetFSMountURLSync(
-                cfUrl,
-                nil,
-                nil,
-                nil,
-                mutableOpenOptions,
-                nil,
-                &mountpoints
-            )
-
-            // 2. Success
-            if result == 0,
-                let points = mountpoints?.takeRetainedValue() as? [String],
-                let path = points.first
-            {
-                logger.info(
-                    "Mount successful: \(url.absoluteString) -> \(path)"
-                )
-                return path
+            guard await unmount(path: existing) else {
+                return .failed(code: EBUSY)
             }
+        }
 
-            // 3. Treat Error 17 (already exists) as success
-            if result == 17,
-                let existing = SystemMountService.findMountPath(forURL: url)
-            {
-                logger.info(
-                    "Share already mounted (NetFSMountURLSync EEXIST): \(url.absoluteString) -> \(existing)"
-                )
-                return existing
-            }
-
-            // 4. Real failure
-            logger.error(
-                "Mount failed: \(url.absoluteString). Error: \(result)"
-            )
-            return nil
-
+        return await Task.detached(priority: .userInitiated) {
+            performMount(url: url)
         }.value
     }
 
+    nonisolated private static func performMount(url: URL) -> MountResult {
+        let target = mountTarget(for: url)
+        let startedAt = ContinuousClock.now
+        AppLogger.log("Mount started: \(target)", level: .debug, source: .mountService)
+
+        if let existing = SystemMountService.findMountPath(forURL: url) {
+            AppLogger.log(
+                "Mount resolved an existing share after retry preparation: \(target) -> \(existing)",
+                source: .mountService
+            )
+            return .success(path: existing)
+        }
+
+        let watchdog = Task.detached(priority: .utility) {
+            do {
+                try await Task.sleep(for: .seconds(30))
+                AppLogger.log(
+                    "Mount still pending after 30 s: \(target); waiting for NetFS or authentication UI",
+                    level: .warning,
+                    source: .mountService
+                )
+            } catch {
+                // Completion cancels the watchdog.
+            }
+        }
+        defer { watchdog.cancel() }
+
+        var mountpoints: Unmanaged<CFArray>?
+        let status = NetFSMountURLSync(
+            url as CFURL,
+            nil,
+            nil,
+            nil,
+            nil,
+            nil,
+            &mountpoints
+        )
+        let elapsed = startedAt.duration(to: .now)
+
+        if status == 0 {
+            if let paths = mountpoints?.takeRetainedValue() as? [String],
+                let path = paths.first
+            {
+                AppLogger.log(
+                    "Mount succeeded: \(target) -> \(path); duration=\(elapsed)",
+                    source: .mountService
+                )
+                return .success(path: path)
+            }
+            if let existing = SystemMountService.findMountPath(forURL: url) {
+                AppLogger.log(
+                    "Mount succeeded and resolved from system mounts: \(target) -> \(existing); duration=\(elapsed)",
+                    source: .mountService
+                )
+                return .success(path: existing)
+            }
+            AppLogger.log(
+                "NetFS reported success without a mount path: \(target); duration=\(elapsed)",
+                level: .error,
+                source: .mountService
+            )
+            return .failed(code: EIO)
+        }
+
+        if status == EEXIST,
+            let existing = SystemMountService.findMountPath(forURL: url)
+        {
+            AppLogger.log(
+                "Mount resolved existing share: \(target) -> \(existing); duration=\(elapsed)",
+                source: .mountService
+            )
+            return .success(path: existing)
+        }
+
+        let result = MountResult.failed(code: status)
+        AppLogger.log(
+            "Mount failed: \(target); \(result.debugDescription); duration=\(elapsed)",
+            level: .error,
+            source: .mountService
+        )
+        return result
+    }
+
+    nonisolated private static func mountTarget(for url: URL) -> String {
+        "\(url.host ?? "unknown-host")\(url.path)"
+    }
+
     /// Unmounts path via NSWorkspace, falling back to kernel-level force unmount.
-    static func unmount(path: String) async {
+    @discardableResult
+    static func unmount(path: String) async -> Bool {
         await Task.detached(priority: .userInitiated) {
             let url = URL(fileURLWithPath: path)
             do {
                 try NSWorkspace.shared.unmountAndEjectDevice(at: url)
-                logger.info("Polite unmount successful: \(path)")
+                AppLogger.log("Polite unmount succeeded: \(path)", source: .mountService)
+                return true
             } catch {
-                logger.warning("Polite unmount failed. Executing MNT_FORCE.")
+                AppLogger.log(
+                    "Polite unmount failed: \(path); \(error.localizedDescription); trying MNT_FORCE",
+                    level: .warning,
+                    source: .mountService
+                )
                 let forceResult = Darwin.unmount(path, MNT_FORCE)
                 if forceResult == 0 {
-                    logger.info("Force unmount successful: \(path)")
+                    AppLogger.log("Force unmount succeeded: \(path)", source: .mountService)
+                    return true
                 } else {
-                    logger.error("Force unmount failed: \(path). errno: \(errno)")
+                    AppLogger.log(
+                        "Force unmount failed: \(path); errno=\(errno): \(String(cString: strerror(errno)))",
+                        level: .error,
+                        source: .mountService
+                    )
+                    return false
                 }
             }
         }.value
@@ -142,8 +224,10 @@ struct MountService {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
-            logger.error(
-                "Login Item toggle failed: \(error.localizedDescription)"
+            AppLogger.log(
+                "Login item update failed: \(error.localizedDescription)",
+                level: .error,
+                source: .mountService
             )
         }
     }

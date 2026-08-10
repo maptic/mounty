@@ -114,7 +114,7 @@ struct SettingsView: View {
                 }
                 .formStyle(.grouped)
                 .scrollContentBackground(.hidden)
-                .scrollDisabled(true)
+                .scrollIndicators(.automatic)
                 .disabled(
                     showResetConfirmation || showQuitConfirmation
                         || manager.showSuccess || manager.showError
@@ -169,7 +169,7 @@ struct SettingsView: View {
                 )
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - File Panels

@@ -14,8 +14,12 @@ final class VolumeManager {
 
     // UI Controls
     var searchText = ""
-    var sortOrder: SortOrder = .name
-    var sortDirection: SortDirection = .ascending
+    var sortOrder: SortOrder = .name {
+        didSet { storage.saveSortOrder(sortOrder.rawValue) }
+    }
+    var sortDirection: SortDirection = .ascending {
+        didSet { storage.saveSortDirection(sortDirection.rawValue) }
+    }
     var showSearch = false
 
     // Preferences
@@ -38,6 +42,7 @@ final class VolumeManager {
     var isRunningSpeedTest = false
     var speedTestResult: SpeedTestService.Result?
     var speedTestError: String?
+    private var speedTestTask: Task<Void, Never>?
 
     private var isNetworkUp = true
     private let maxLogEntries = 200
@@ -59,6 +64,9 @@ final class VolumeManager {
         self.volumes = storage.loadVolumes()
         self.preferredTerminal = storage.loadTerminalBundleID()
         self.minimumLogLevel = storage.loadMinimumLogLevel()
+        self.sortOrder = SortOrder(rawValue: storage.loadSortOrder() ?? "") ?? .name
+        self.sortDirection =
+            SortDirection(rawValue: storage.loadSortDirection() ?? "") ?? .ascending
 
         startLogObservation()
         startEventObservation()
@@ -120,8 +128,9 @@ final class VolumeManager {
         case state = "State"
     }
 
-    enum SortDirection {
-        case ascending, descending
+    enum SortDirection: String {
+        case ascending
+        case descending
     }
 
     // MARK: - Logging
@@ -166,7 +175,7 @@ final class VolumeManager {
         let volumeID = volume.id
         let volumeName = volume.name
 
-        Task.detached(priority: .userInitiated) { [weak self] in
+        speedTestTask = Task.detached(priority: .userInitiated) { [weak self] in
             AppLogger.log(
                 "Speed test started for \(volumeName)",
                 source: .manager
@@ -183,6 +192,7 @@ final class VolumeManager {
                     guard self?.speedTestVolumeId == volumeID else { return }
                     self?.speedTestResult = result
                     self?.isRunningSpeedTest = false
+                    self?.speedTestTask = nil
                 }
             } catch {
                 let message = error.localizedDescription
@@ -195,13 +205,17 @@ final class VolumeManager {
                     guard self?.speedTestVolumeId == volumeID else { return }
                     self?.speedTestError = message
                     self?.isRunningSpeedTest = false
+                    self?.speedTestTask = nil
                 }
             }
         }
     }
 
     func clearSpeedTest() {
+        speedTestTask?.cancel()
+        speedTestTask = nil
         speedTestVolumeId = nil
+        isRunningSpeedTest = false
         speedTestResult = nil
         speedTestError = nil
     }

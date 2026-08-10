@@ -138,6 +138,13 @@ struct VolumeRow: View {
 
             if isMounted {
                 Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(currentPath, forType: .string)
+                } label: {
+                    Label("Copy Mount Path", systemImage: "doc.on.doc")
+                }
+
+                Button {
                     manager.runSpeedTest(for: volume)
                 } label: {
                     Label("Measure Speed…", systemImage: "speedometer")

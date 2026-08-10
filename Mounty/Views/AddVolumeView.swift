@@ -89,7 +89,7 @@ struct AddVolumeView: View {
             }
             .padding(20)
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func save() {
@@ -146,7 +146,7 @@ struct EditVolumeView: View {
             }
             .padding(20)
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func save() {

@@ -44,4 +44,20 @@ struct PersistenceServiceTests {
 
         #expect(sut.loadMinimumLogLevel() == .warning)
     }
+
+    @Test func savesAndLoadsSortPreferences() {
+        let suiteName = "MountyTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let sut = PersistenceService(defaults: defaults)
+        #expect(sut.loadSortOrder() == nil)
+        #expect(sut.loadSortDirection() == nil)
+
+        sut.saveSortOrder("State")
+        sut.saveSortDirection("descending")
+
+        #expect(sut.loadSortOrder() == "State")
+        #expect(sut.loadSortDirection() == "descending")
+    }
 }

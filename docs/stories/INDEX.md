@@ -4,6 +4,10 @@ Newest stories first. Statuses: `OPEN`, `IN_PROGRESS`, `CLOSED`.
 
 | ID | Type | Story | Status | Date |
 | --- | --- | --- | --- | --- |
+| [019](./019-copy-mounted-path.md) | feat | Copy mounted path | CLOSED | 2026-08-10 |
+| [018](./018-settings-scrolling-and-dialog-presentation.md) | fix | Settings scrolling and dialog presentation | CLOSED | 2026-08-10 |
+| [017](./017-main-list-resize-layout.md) | fix | Main list resize layout | CLOSED | 2026-08-10 |
+| [016](./016-menu-bar-layout-and-speed-test-responsiveness.md) | fix | Menu-bar layout and speed-test responsiveness | CLOSED | 2026-08-10 |
 | [015](./015-smb-endpoint-validation.md) | fix | SMB endpoint validation and stable edits | CLOSED | 2026-08-10 |
 | [014](./014-volume-identity-enforcement.md) | fix | Volume identity enforcement | CLOSED | 2026-08-10 |
 | [013](./013-offline-mount-lifecycle.md) | fix | Offline mount lifecycle preservation | CLOSED | 2026-08-10 |

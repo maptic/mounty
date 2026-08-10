@@ -14,10 +14,7 @@ struct MainListView: View {
     @State private var dragStartRows = 0
 
     private var listHeight: CGFloat {
-        let count = manager.filteredAndSortedVolumes.count
-        // Empty state uses the current row cap so the resize handle still works.
-        if count == 0 { return CGFloat(maxVisibleRows) * rowHeight }
-        return min(CGFloat(count), CGFloat(maxVisibleRows)) * rowHeight
+        CGFloat(maxVisibleRows) * rowHeight
     }
 
     private var isSearchVisible: Bool {
@@ -216,6 +213,6 @@ struct MainListView: View {
                 )
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

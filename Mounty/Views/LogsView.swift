@@ -28,7 +28,7 @@ struct LogsView: View {
                         .foregroundColor(.secondary)
                     Spacer()
                 }
-                .frame(height: 200)
+                .frame(maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -40,7 +40,7 @@ struct LogsView: View {
                         }
                         .padding(.vertical, 4)
                     }
-                    .frame(height: 200)
+                    .frame(maxHeight: .infinity)
                     .onChange(of: visibleEntries.count) { _, _ in
                         proxy.scrollTo("logsBottom", anchor: .bottom)
                     }
@@ -108,7 +108,7 @@ struct LogsView: View {
             }
             .appFooterLayout()
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

@@ -31,23 +31,29 @@ manually re-mounting shares in Finder.
 brew install --cask maptic/tap/mounty
 ```
 
+Use the **full `maptic/tap/mounty` token**: `mounty` on its own is
+[Mounty for NTFS](https://formulae.brew.sh/cask/mounty) in `homebrew/cask`, an unrelated app that
+happens to share the name.
+
 ### Direct download
 
 1. Download the latest `Mounty.dmg` from the [**Releases**](https://github.com/maptic/mounty/releases/latest) page.
 2. Open the DMG and drag **Mounty** into `Applications`.
 
 > [!IMPORTANT]
-> **First-launch Gatekeeper note.** Releases are signed and notarized when the release workflow has
-> Developer ID credentials. For an ad-hoc-signed release, macOS may refuse to open it on the first
-> try. To allow that build:
+> **First launch is blocked by Gatekeeper.** Releases are only signed and notarized when the
+> release workflow has Developer ID credentials; without them the app is ad-hoc signed, and macOS
+> reports that it *"could not verify Mounty.app is free of malware"*. To allow it:
 >
-> - **Right-click** `Mounty.app` → **Open** → **Open** in the dialog, **or**
-> - remove the quarantine flag from a terminal:
->   ```sh
->   xattr -dr com.apple.quarantine /Applications/Mounty.app
->   ```
+> 1. Try to open Mounty and dismiss the warning.
+> 2. Open **System Settings → Privacy & Security**, scroll to the message about Mounty, and click
+>    **Open Anyway**.
 >
-> This is a one-time step and is unnecessary for notarized releases.
+> This is a one-time approval — Homebrew carries it into later upgrades — and it is unnecessary for
+> notarized releases. Note that the old **right-click → Open** shortcut no longer works: Apple
+> removed it in macOS 15. Clearing the flag from a terminal
+> (`xattr -dr com.apple.quarantine /Applications/Mounty.app`) fails with `Operation not permitted`
+> unless that terminal is granted **App Management** in Privacy & Security.
 
 ## Build from source
 

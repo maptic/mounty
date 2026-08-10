@@ -67,8 +67,8 @@ Contributions are welcome! Please read [CONTRIBUTING.md](./CONTRIBUTING.md) firs
 - Commits follow [**Conventional Commits**](https://www.conventionalcommits.org/) — releases are
   fully automated from commit history via [release-please](https://github.com/googleapis/release-please).
 - Code is auto-formatted with `swift-format` on commit (via the provided git hook).
-- The project uses a lightweight, provider-neutral **Spec-Driven Development** workflow — see
-  [`AGENTS.md`](./AGENTS.md) and [`specs/`](./specs/).
+- The project uses lightweight, provider-neutral **story records** — see [`AGENTS.md`](./AGENTS.md)
+  and [`docs/stories/`](./docs/stories/).
 
 ## License
 

@@ -5,7 +5,7 @@ It becomes the squash-merge commit and drives the automated release.
 
 ## What & why
 
-<!-- Describe the change and the motivation. Link the spec in specs/ if applicable. -->
+<!-- Describe the change and the motivation. Link the story in docs/stories/ if applicable. -->
 
 ## Type of change
 

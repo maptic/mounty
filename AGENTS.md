@@ -101,15 +101,14 @@ Generated-by: claude-opus-4-8
 Use your real model id (`claude-opus-4-8`, `gpt-5`, `gemini-2.5-pro`, …). This is provider-neutral.
 The `commit-msg` hook validates the format when the trailer is present.
 
-## Spec-Driven Development (SDD)
+## Stories
 
-For non-trivial work, write the spec before the code. Templates live in `specs/templates/`:
-
-1. **Specify** *what & why* → `specs/templates/spec-template.md`
-2. **Plan** *how* → `specs/templates/plan-template.md`
-3. **Tasks** breakdown → `specs/templates/tasks-template.md`
-
-Copy the templates into `specs/<NNN-short-name>/` for the feature you are working on.
+Keep one concise Markdown file per change in `docs/stories/`, registered in `docs/stories/INDEX.md`. Use the
+next numeric ID and a Conventional Commit type (`feat`, `fix`, `refactor`, `perf`, `docs`, `test`,
+`chore`, or `ci`). A story contains only status, type, date, intent, acceptance criteria, and
+validation. New work starts `OPEN`, implementation moves it to `IN_PROGRESS`, and completed work
+is `CLOSED`; update the index whenever the status changes. Historical stories may be written from
+the commit history and should include the relevant commit IDs.
 
 ## UI responsiveness — non-negotiable rules
 

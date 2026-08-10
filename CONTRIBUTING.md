@@ -64,14 +64,11 @@ Generated-by: claude-opus-4-8
 Use the exact model **id** (e.g. `claude-opus-4-8`, `gpt-5`, `gemini-2.5-pro`). The `commit-msg`
 hook validates the format when the trailer is present.
 
-## Spec-Driven Development (SDD)
+## Stories
 
-Non-trivial changes start with a short spec, not code. The workflow is provider-neutral and lives
-in [`specs/`](./specs/):
-
-1. **Specify** — write *what* and *why* using [`specs/templates/spec-template.md`](./specs/templates/spec-template.md).
-2. **Plan** — write *how* using [`specs/templates/plan-template.md`](./specs/templates/plan-template.md).
-3. **Tasks** — break the plan into steps using [`specs/templates/tasks-template.md`](./specs/templates/tasks-template.md).
+Non-trivial changes start with a short story in [`docs/stories/`](./docs/stories/). Copy
+[`TEMPLATE.md`](./docs/stories/TEMPLATE.md), register the story in [`INDEX.md`](./docs/stories/INDEX.md),
+and keep its acceptance criteria and validation notes current.
 
 See [`AGENTS.md`](./AGENTS.md) for the full agent-facing guide (architecture, commands, conventions).
 

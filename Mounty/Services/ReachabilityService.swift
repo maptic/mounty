@@ -3,52 +3,89 @@ import Foundation
 import Network
 import Synchronization
 
+/// Outcome of a mount-point liveness probe.
+enum MountProbe: Sendable, Equatable {
+    /// statfs(2) answered: the mount is responsive.
+    case alive
+    /// statfs(2) answered with an error: the mount is gone or unusable.
+    case dead(code: Int32)
+    /// The deadline elapsed while statfs(2) was still outstanding. A share saturated
+    /// with I/O answers slowly — it is busy, not dead — so this outcome must never
+    /// be treated as a failure or trigger recovery.
+    case indeterminate
+
+    nonisolated static func == (lhs: MountProbe, rhs: MountProbe) -> Bool {
+        switch (lhs, rhs) {
+        case (.alive, .alive), (.indeterminate, .indeterminate): true
+        case (.dead(let lhsCode), .dead(let rhsCode)): lhsCode == rhsCode
+        default: false
+        }
+    }
+}
+
 /// Verifies server and mount point responsiveness.
 struct ReachabilityService {
     nonisolated private static let mountProbes = MountProbeRegistry()
 
-    /// Validates filesystem responsiveness by calling statfs(2) on the mount path.
+    /// Probes filesystem responsiveness by calling statfs(2) on the mount path.
     ///
     /// statfs() queries kernel-level filesystem metadata without reading file content,
     /// so it never triggers the macOS TCC "access files on a network volume" prompt.
-    /// It will block (and thus timeout) on a hung/dead mount, which is exactly the
-    /// behaviour we need to detect silently dead kernel mounts.
+    /// It will block on a hung/dead mount, which is exactly the behaviour we need to
+    /// detect silently dead kernel mounts.
     ///
-    /// Async: dispatches statfs to a background thread so the Swift cooperative
-    /// thread pool is never blocked waiting for a hung mount.
-    nonisolated static func isMountPointAlive(path: String) async -> Bool {
+    /// A busy share also answers slowly, so an elapsed deadline reports `.indeterminate`
+    /// rather than a failure: only an errno from statfs(2) proves the mount is `.dead`.
+    ///
+    /// Async: dispatches statfs to a background thread so the Swift cooperative thread
+    /// pool is never blocked waiting for a hung mount. Concurrent probes of one path
+    /// share a single syscall, and every caller applies its own deadline.
+    nonisolated static func probeMountPoint(
+        path: String,
+        timeout: TimeInterval = 2.0,
+        hangGrace: Duration = .seconds(60)
+    ) async -> MountProbe {
+        let token = UUID()
         return await withCheckedContinuation { continuation in
-            guard mountProbes.register(path: path, continuation: continuation) else { return }
-
-            DispatchQueue.global(qos: .utility).async {
-                defer { mountProbes.finish(path: path) }
-                // Allocate uninitialized memory instead of calling statfs.init(),
-                // which is @MainActor under SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor.
-                // The C statfs(2) syscall writes the struct entirely so zero-init
-                // is unnecessary and the @MainActor init can be bypassed safely.
-                let buf = UnsafeMutablePointer<statfs>.allocate(capacity: 1)
-                defer { buf.deallocate() }
-                let status = statfs(path, buf)
-                let errorCode = errno
-                let alive = status == 0
-                if mountProbes.resolve(path: path, result: alive) {
-                    if !alive {
+            if mountProbes.register(path: path, token: token, continuation: continuation) {
+                DispatchQueue.global(qos: .utility).async {
+                    // Allocate uninitialized memory instead of calling statfs.init(),
+                    // which is @MainActor under SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor.
+                    // The C statfs(2) syscall writes the struct entirely so zero-init
+                    // is unnecessary and the @MainActor init can be bypassed safely.
+                    let buf = UnsafeMutablePointer<statfs>.allocate(capacity: 1)
+                    defer { buf.deallocate() }
+                    let status = statfs(path, buf)
+                    let errorCode = errno
+                    if status == 0 {
+                        mountProbes.complete(path: path, result: .alive)
+                    } else {
                         AppLogger.log(
                             "Mount probe failed: \(path); errno=\(errorCode): \(String(cString: strerror(errorCode)))",
                             level: .warning,
                             source: .reachability
                         )
+                        mountProbes.complete(path: path, result: .dead(code: errorCode))
                     }
                 }
             }
 
-            DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
-                if mountProbes.resolve(path: path, result: false) {
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                switch mountProbes.timeOut(path: path, token: token, hangGrace: hangGrace) {
+                case .indeterminate:
                     AppLogger.log(
-                        "Mount probe timed out after 1 s: \(path)",
+                        "Mount probe still pending after \(timeout) s: \(path); the mount is busy, not dead",
+                        level: .debug,
+                        source: .reachability
+                    )
+                case .dead:
+                    AppLogger.log(
+                        "Mount probe has been stuck for over \(hangGrace): \(path); treating the mount as dead",
                         level: .warning,
                         source: .reachability
                     )
+                default:
+                    break
                 }
             }
         }
@@ -108,10 +145,16 @@ struct ReachabilityService {
     }
 }
 
-private final class MountProbeRegistry: Sendable {
+/// Coalesces concurrent statfs(2) probes of the same path onto a single syscall.
+///
+/// A probe entry exists only while its syscall is outstanding, and no verdict is ever
+/// stored: a caller that gives up on its own deadline is simply dropped from the waiters.
+/// A later caller therefore joins the still-running syscall and waits for the real
+/// answer instead of inheriting an earlier caller's timeout as if it were a result.
+final class MountProbeRegistry: Sendable {
     private struct ProbeState {
-        var result: Bool?
-        var waiters: [CheckedContinuation<Bool, Never>]
+        let startedAt = ContinuousClock.now
+        var waiters: [UUID: CheckedContinuation<MountProbe, Never>]
     }
 
     private let probes = Mutex([String: ProbeState]())
@@ -119,48 +162,50 @@ private final class MountProbeRegistry: Sendable {
     /// Registers a caller and returns true only when it must start the underlying syscall.
     nonisolated func register(
         path: String,
-        continuation: CheckedContinuation<Bool, Never>
+        token: UUID,
+        continuation: CheckedContinuation<MountProbe, Never>
     ) -> Bool {
-        var immediateResult: Bool?
-        let shouldStart = probes.withLock { probes in
+        probes.withLock { probes in
             guard var state = probes[path] else {
-                probes[path] = ProbeState(result: nil, waiters: [continuation])
+                probes[path] = ProbeState(waiters: [token: continuation])
                 return true
             }
-            if let result = state.result {
-                immediateResult = result
-            } else {
-                state.waiters.append(continuation)
-                probes[path] = state
-            }
+            state.waiters[token] = continuation
+            probes[path] = state
             return false
         }
-        if let immediateResult {
-            continuation.resume(returning: immediateResult)
-        }
-        return shouldStart
     }
 
-    /// Resolves all current and future waiters while the non-cancellable syscall remains active.
-    @discardableResult
-    nonisolated func resolve(path: String, result: Bool) -> Bool {
-        let waiters: [CheckedContinuation<Bool, Never>]? = probes.withLock { probes in
-            guard var state = probes[path], state.result == nil else { return nil }
-            state.result = result
-            let waiters = state.waiters
-            state.waiters.removeAll()
-            probes[path] = state
-            return waiters
-        }
-        guard let waiters else { return false }
-        for continuation in waiters {
+    /// Delivers the syscall's verdict to every remaining waiter and clears the probe.
+    nonisolated func complete(path: String, result: MountProbe) {
+        guard let state = probes.withLock({ $0.removeValue(forKey: path) }) else { return }
+        for continuation in state.waiters.values {
             continuation.resume(returning: result)
         }
-        return true
     }
 
-    nonisolated func finish(path: String) {
-        probes.withLock { _ = $0.removeValue(forKey: path) }
+    /// Releases a single caller whose deadline elapsed while the syscall is still
+    /// outstanding, reporting the mount as busy rather than failed — unless the syscall
+    /// itself has been stuck past `hangGrace`, which a live filesystem never is.
+    ///
+    /// Returns the verdict delivered, or `nil` when that caller was no longer waiting.
+    @discardableResult
+    nonisolated func timeOut(path: String, token: UUID, hangGrace: Duration) -> MountProbe? {
+        typealias Resolution = (
+            continuation: CheckedContinuation<MountProbe, Never>, verdict: MountProbe
+        )
+
+        let resolution = probes.withLock { probes -> Resolution? in
+            guard var state = probes[path],
+                let continuation = state.waiters.removeValue(forKey: token)
+            else { return nil }
+            probes[path] = state
+            let isHung = state.startedAt.duration(to: .now) > hangGrace
+            return (continuation, isHung ? .dead(code: ETIMEDOUT) : .indeterminate)
+        }
+        guard let resolution else { return nil }
+        resolution.continuation.resume(returning: resolution.verdict)
+        return resolution.verdict
     }
 }
 

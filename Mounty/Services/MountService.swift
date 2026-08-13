@@ -49,21 +49,34 @@ struct MountService {
                 SystemMountService.findMountPath(forURL: url)
             }
         ).value {
-            if await ReachabilityService.isMountPointAlive(path: existing) {
+            switch await ReachabilityService.probeMountPoint(path: existing) {
+            case .alive:
                 AppLogger.log(
                     "Mount skipped; already mounted and responsive: \(mountTarget(for: url)) -> \(existing)",
                     source: .mountService
                 )
                 return .success(path: existing)
-            }
 
-            AppLogger.log(
-                "Existing mount is unresponsive: \(existing); unmounting before retry",
-                level: .warning,
-                source: .mountService
-            )
-            guard await unmount(path: existing) else {
-                return .failed(code: EBUSY)
+            case .indeterminate:
+                // A share saturated with I/O answers statfs slowly. Recovering it here
+                // would force-unmount a healthy mount and destroy other processes'
+                // open file descriptors, so a busy mount is always left alone.
+                AppLogger.log(
+                    "Mount skipped; already mounted and busy: \(mountTarget(for: url)) -> \(existing)",
+                    source: .mountService
+                )
+                return .success(path: existing)
+
+            case .dead(let code):
+                AppLogger.log(
+                    "Existing mount is dead: \(existing); errno=\(code): "
+                        + "\(String(cString: strerror(code))); unmounting before retry",
+                    level: .warning,
+                    source: .mountService
+                )
+                guard await unmount(path: existing) else {
+                    return .failed(code: EBUSY)
+                }
             }
         }
 

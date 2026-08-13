@@ -4,6 +4,7 @@ Newest stories first. Statuses: `OPEN`, `IN_PROGRESS`, `CLOSED`.
 
 | ID | Type | Story | Status | Date |
 | --- | --- | --- | --- | --- |
+| [026](./026-automount-must-not-disturb-busy-mounts.md) | fix | Automount must not disturb busy mounts | CLOSED | 2026-08-13 |
 | [025](./025-gatekeeper-install-instructions.md) | docs | Gatekeeper install instructions | CLOSED | 2026-08-10 |
 | [024](./024-homebrew-tap-distribution.md) | ci | Homebrew tap distribution | CLOSED | 2026-08-10 |
 | [023](./023-readme-logo-visual-alignment.md) | fix | README logo visual alignment | CLOSED | 2026-08-10 |

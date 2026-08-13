@@ -385,7 +385,10 @@ final class VolumeManager {
                             address: volume.serverAddress
                         )
                     else { return (volume.id, nil) }
-                    guard await ReachabilityService.isMountPointAlive(path: path) else {
+                    // Only a definitive statfs error means the mount is gone. A busy
+                    // share answers slowly, and dropping it here would make automount
+                    // recover — and thereby tear down — a perfectly healthy mount.
+                    if case .dead = await ReachabilityService.probeMountPoint(path: path) {
                         return (volume.id, nil)
                     }
                     return (volume.id, path)

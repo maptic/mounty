@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/maptic/mounty/compare/1.2.1...1.2.2) (2026-08-13)
+
+
+### Bug Fixes
+
+* never unmount a busy share during automount ([#7](https://github.com/maptic/mounty/issues/7)) ([2f7d54c](https://github.com/maptic/mounty/commit/2f7d54c1c3ac5d0faea265422a271afe76cdee9c))
+
 ## [1.2.1](https://github.com/maptic/mounty/compare/1.2.0...1.2.1) (2026-08-10)
 
 
